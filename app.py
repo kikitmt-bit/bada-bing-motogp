@@ -2,7 +2,7 @@
 """Bada Bing MotoGP : les Grands Prix sans spoil (même principe que le site NBA).
 
 Données : API officielle MotoGP (api.motogp.pulselive.com, sans clé), actus (flux RSS de Motorsport.com France et
-Paddock GP), vidéos (chaîne YouTube officielle MotoGP). Lancer : python -m streamlit run motogp/app.py
+Paddock GP), vidéos (chaîne YouTube officielle MotoGP). Lancer : python -m streamlit run app.py
 """
 import html
 import json
