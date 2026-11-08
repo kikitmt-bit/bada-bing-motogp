@@ -27,7 +27,7 @@ try:
 except Exception:  # pragma: no cover
     components = None
 
-APP_VERSION = "2026-11-m015"
+APP_VERSION = "2026-11-m016"
 HERE = os.path.dirname(os.path.abspath(__file__))
 CACHE_DIR = os.path.join(HERE, ".cache")
 log = logging.getLogger("motogp")
@@ -1013,6 +1013,11 @@ def fr_place(ev):
     return re.sub(r"^gp (du |de la |de l'|de |d'|des )?", "", name).strip()
 
 
+def gp_short(ev):
+    """« Malaisie », « Pays-Bas » : le nom du GP sans « GP de »."""
+    return re.sub(r"^GP (du |de la |de l'|de |d'|des )?", "", ev["name"])
+
+
 def gp_full(ev):
     return ev["name"].replace("GP ", "Grand Prix ", 1)
 
@@ -1238,7 +1243,7 @@ def hidden(label, content, cls="tg", seen=""):
     i = uid("h")
     k = f" data-k='{esc(seen)}'" if seen else ""
     return (f"<div class='hb'{k}><input type='checkbox' id='{i}' class='{cls}'>"
-            f"<label for='{i}' class='hbl'><span>👁</span>{label}</label>"
+            f"<label for='{i}' class='hbl'><span>👁</span><em class='lt'>{label}</em></label>"
             f"<div class='hbx'>{content}</div></div>")
 
 
@@ -1420,7 +1425,7 @@ CSS = """
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@500;600;700;800;900&family=Saira:wght@400;500;600;700&display=swap');
 :root {--bg:#06070a; --bg2:#0c0e13; --card:rgba(255,255,255,.035); --card2:rgba(255,255,255,.06); --line:rgba(255,255,255,.09);
-       --tx:#f3f5f9; --mu:#8d95a5; --red:#e10600; --red2:#ff3b30; --gold:#f3c34e; --silver:#d9dee6; --bronze:#d08a52;
+       --tx:#f3f5f9; --mu:#9aa2b1; --red:#e10600; --red2:#ff3b30; --gold:#f3c34e; --silver:#d9dee6; --bronze:#d08a52;
        --ok:#35d07f; --D:'Saira Condensed', sans-serif; --B:'Saira', sans-serif;}
 html, body, [data-testid="stAppViewContainer"], .stApp {background:
   radial-gradient(1200px 500px at 85% -10%, rgba(225,6,0,.16), transparent 60%),
@@ -1748,7 +1753,7 @@ table.res .pts {font:800 16px var(--D);}
 .fav .nums div b {display:block; font:900 italic 28px/1 var(--D);}
 .fav .nums div span {color:#c3c9d3; font-size:11px; text-transform:uppercase; letter-spacing:1.2px;}
 /* ---------- prochain GP ---------- */
-.nx {position:relative; display:block; border-radius:16px; overflow:hidden; min-height:200px; padding:18px; isolation:isolate;
+.nx {position:relative; display:block; border-radius:16px; overflow:hidden; min-height:200px; padding:18px 36% 18px 18px; isolation:isolate;
   border:1px solid var(--line);}
 .nx:before {content:''; position:absolute; inset:0; z-index:-2; background:var(--img) center/cover; filter:brightness(.5);}
 .nx:after {content:''; position:absolute; inset:0; z-index:-1; background:linear-gradient(90deg, rgba(0,0,0,.92), rgba(0,0,0,.2));}
@@ -1863,6 +1868,23 @@ table.std .rk {font:900 italic 19px var(--D); text-align:center; width:34px;}
 .lb .pt small {color:var(--mu); font:700 12px var(--B); text-transform:uppercase;}
 .lb .gp {margin-left:6px; padding:2px 8px; border-radius:4px; background:rgba(255,255,255,.08); font:800 13px var(--D); color:#d9dee6;}
 .lb .gp.lead {background:var(--gold); color:#000; text-transform:uppercase; letter-spacing:.8px;}
+/* ---------- replays (bloc sous la bannière) ---------- */
+.rpg {display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:10px;}
+.stMarkdown a.rpk {color:#fff !important;}
+.rpk {display:flex; align-items:center; gap:12px; padding:12px 14px; border-radius:12px; background:#000; min-width:0;
+  border:1px solid rgba(255,255,255,.35); transition:transform .12s, border-color .12s, box-shadow .12s;}
+.rpk:hover {transform:translateY(-2px); border-color:#fff; box-shadow:0 10px 26px rgba(225,6,0,.3);}
+.rpk.main {background:linear-gradient(120deg, #1a0405, #000 60%); border-color:rgba(225,6,0,.6);}
+.rpk .pl {width:38px; height:38px; flex:none; border-radius:50%; background:var(--red); position:relative; box-shadow:0 4px 16px rgba(225,6,0,.5);}
+.rpk .pl:after {content:''; position:absolute; left:15px; top:11px; border-left:12px solid #fff; border-top:8px solid transparent;
+  border-bottom:8px solid transparent;}
+.rpk .tx {display:flex; flex-direction:column; min-width:0; line-height:1.1;}
+.rpk .tx i {font:700 11px var(--B); font-style:normal; color:#c9ced8; letter-spacing:1.4px; text-transform:uppercase; white-space:nowrap;}
+.rpk .tx b {font:900 italic 21px var(--D); text-transform:uppercase; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+.rpk small {margin-left:auto; color:var(--mu); font-size:12px; white-space:nowrap;}
+.tl .dh .dwx {display:none;}
+.shield {display:flex; flex-direction:column; gap:8px;}
+.shield .hbx .news {margin-top:6px;}
 /* ---------- pilotes ---------- */
 .rg {display:grid; grid-template-columns:repeat(auto-fill, minmax(190px, 1fr)); gap:12px;}
 .rt {position:relative; overflow:hidden; border-radius:16px; text-decoration:none; min-width:0; display:block; height:270px;
@@ -1959,14 +1981,141 @@ a.nw:hover {transform:translateY(-3px);}
   .rn .tm {max-width:140px;}
   .podium {gap:6px;} .pdi {height:100px;} .pd1 .pdi {height:130px;} .pdn {font-size:16px;} .pdp {font-size:44px; top:-34px;}
   .fav .fi {flex-basis:110px;} .fav .fi img {height:120px;} .fav .t {font-size:26px;}
-  .st-key-tabs [data-testid="stHorizontalBlock"] {flex-wrap:wrap !important; gap:6px !important;}
-  .st-key-tabs [data-testid="stColumn"] {flex:0 0 calc(33.33% - 4px) !important; min-width:0 !important; width:calc(33.33% - 4px) !important;}
-  .st-key-tabs button p {font-size:14px !important;}
-  .st-key-tabs button {padding:4px 6px !important;}
   table.std .hm {display:none;}
   table.std td, table.std th {padding:6px 4px;}
   table.std .rc .nb, table.std .rn .tm {display:none;}
   table.std .rn b {max-width:118px;} table.std .rc .hd {width:28px !important; height:28px !important;}
+}
+@media (max-width: 700px) {
+  /* --- barre d'onglets fixée en bas, comme une application --- */
+  .block-container {padding-bottom:96px !important; padding-top:.6rem !important;}
+  .st-key-tabs {position:fixed !important; top:auto !important; bottom:0; left:0; right:0; z-index:999; margin:0 !important;
+    padding:6px 4px calc(6px + env(safe-area-inset-bottom)) !important; backdrop-filter:none !important;
+    background:rgba(6,7,10,.97) !important; border-top:1px solid var(--line); border-bottom:none !important;}
+  .st-key-tabs [data-testid="stHorizontalBlock"] {flex-wrap:nowrap !important; gap:2px !important; overflow:visible;}
+  .st-key-tabs [data-testid="stColumn"] {flex:1 1 0 !important; min-width:0 !important; width:auto !important;}
+  .st-key-tabs [data-testid="stColumn"]:last-child {flex:0 0 30px !important;}
+  .st-key-tabs button {transform:none !important; padding:4px 0 !important; min-height:50px !important; flex-direction:column !important;
+    gap:2px !important; border-radius:10px !important; box-shadow:none !important;}
+  .st-key-tabs button > div, .st-key-tabs button > div > span {display:flex !important; flex-direction:column !important;
+    align-items:center !important; gap:1px !important; max-width:100%;}
+  .st-key-tabs button [data-testid="stMarkdownContainer"] {max-width:100%; overflow:visible !important;}
+  .st-key-tabs button p {white-space:nowrap !important; overflow:visible !important; text-overflow:clip !important;}
+  .st-key-tabs button [data-testid="stIconMaterial"] {font-size:22px !important;}
+  .st-key-tabs button p {font-size:9.5px !important; letter-spacing:0 !important; font-style:normal !important; text-transform:none !important;
+    font-weight:700 !important;}
+  .st-key-tabs button[kind="primary"], .st-key-tabs button[data-testid="stBaseButton-primary"] {background:transparent !important;
+    border-color:transparent !important; box-shadow:none !important; color:var(--red2) !important;}
+  .st-key-tabs button[data-testid="stBaseButton-primary"] p, .st-key-tabs button[data-testid="stBaseButton-primary"] [data-testid="stIconMaterial"] {color:var(--red2) !important;}
+  .st-key-tabs [data-testid="stPopover"] button {min-height:50px !important; opacity:.45;}
+  .st-key-tabs [data-testid="stPopover"] button [data-testid="stIconMaterial"] {font-size:17px !important;}
+  .brand .lg {font-size:22px;}
+  /* --- navigation entre GP --- */
+  .stMarkdown a.gpn {font-size:14px;} .stMarkdown a.gpn.c em {display:none;}
+  /* --- bannière compacte --- */
+  .ph-in {min-height:210px !important; gap:14px !important; padding:14px 16px 16px !important;}
+  .hero2 h1 {font-size:34px !important;} .hcd b {font-size:22px !important;} .hcd small {font-size:10px;}
+  .ctry {font-size:12px;} .rnd {font-size:11px;} .rnd b {font-size:17px;}
+  .bp {height:206px !important;}
+  .bp-h {top:10px;} .bp-h b {font-size:11px;}
+  .bp-tb.tall, .bp-tb.wide {left:16px !important; right:16px !important; top:44px !important; bottom:78px !important;}
+  .bp-s {top:auto !important; right:auto !important; bottom:24px !important; text-align:left !important; padding:2px 0 !important;
+    width:24%; overflow:hidden;}
+  .bp-s:before {display:none;}
+  .bp-s.tl {left:4% !important;} .bp-s.tr {left:28% !important;} .bp-s.bl {left:52% !important;} .bp-s.br {left:76% !important;}
+  .bp-s span {font-size:9px; letter-spacing:.8px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .bp-s b {font-size:19px !important;} .bp-s b small {font-size:10px;}
+  .bp-s.tr b small, .bp-s.br b small {display:none;}
+  .bp-f {bottom:5px; font-size:10px;}
+  /* --- « Tout dévoiler » flottant --- */
+  .st-key-tools {position:fixed !important; right:12px; bottom:84px; z-index:998; width:auto !important;
+    background:rgba(20,22,28,.96); border:1px solid rgba(225,6,0,.6); border-radius:24px; padding:6px 14px 6px 10px !important;
+    box-shadow:0 8px 24px rgba(0,0,0,.6);}
+  .st-key-tools label p {font-size:13px !important;}
+  .st-key-tools [data-testid="stTooltipIcon"], .st-key-tools [data-testid="stTooltipHoverTarget"] {display:none !important;}
+  /* --- replays --- */
+  .rpg {grid-template-columns:1fr 1fr; gap:8px;}
+  .rpk {padding:10px; gap:8px;} .rpk .pl {width:30px; height:30px;} .rpk .pl:after {left:12px; top:8px; border-left-width:10px; border-top-width:7px; border-bottom-width:7px;}
+  .rpk .tx b {font-size:17px;} .rpk .tx i {font-size:9px; letter-spacing:.8px;} .rpk small {display:none;}
+  /* --- catégories en onglets pleine largeur --- */
+  .st-key-cat_pick [role="radiogroup"], .st-key-cat_std [role="radiogroup"], .st-key-cat_rid [role="radiogroup"],
+  .st-key-news_f [role="radiogroup"] {display:flex !important; width:100%;}
+  .st-key-cat_pick button, .st-key-cat_std button, .st-key-cat_rid button, .st-key-news_f button {flex:1 1 auto;}
+  [data-testid="stButtonGroup"] button[data-variant="segmented_control"] {padding:6px 8px !important;}
+  [data-testid="stButtonGroup"] button[data-variant="segmented_control"] p {font-size:13px !important;}
+  /* --- séances en lignes compactes : un toucher sur « Voir » déroule le résultat --- */
+  .tl {gap:10px !important;}
+  .tl .day {gap:6px;}
+  .tl .dh {font-size:18px; padding-bottom:4px; align-items:center;}
+  .tl .dh .dwx {display:inline; margin-left:auto; font:500 12px var(--B); color:var(--mu); font-style:normal;}
+  .ses {padding:9px 12px 9px 14px; border-radius:10px;}
+  .ses .t {font-size:20px; width:52px;}
+  .ses .nm {font-size:16px; padding-right:78px;}
+  .ses .nm small.wx {display:none;}
+  .ses .nm small {font-size:12px;}
+  .ses .done {display:none;}
+  .ses .body {margin-top:0;}
+  .ses .hb {position:static;}
+  .ses .hbl {position:absolute; right:10px; top:7px; padding:3px 10px; font-size:13px;}
+  .ses .hbl .lt {display:none;} .ses .hbl:after {content:'Voir';}
+  .mini {padding-top:8px;}
+  /* --- « Ce qu'il faut savoir » en lignes --- */
+  .know {gap:8px !important;}
+  .know .card {padding:12px 14px; border-radius:12px;}
+  .know .card .tease, .know .card .ico {display:none;}
+  .know .card h3 {font-size:18px !important; padding-right:84px !important; margin:0 !important; line-height:30px !important;}
+  .know .card .hb {position:static;}
+  .know .card .hbl {position:absolute; right:12px; top:11px; padding:5px 12px; font-size:13px;}
+  .know .card .hbl .lt {display:none;} .know .card .hbl:after {content:'Voir';}
+  .know .card .hbx {margin-top:10px;}
+  /* --- actus en liste compacte --- */
+  .news {grid-template-columns:1fr !important; gap:8px;}
+  .nw {flex-direction:row; height:auto; border-radius:12px;}
+  .nw .im {width:108px; min-height:88px; height:auto; flex:none;} .nw .im:before {font-size:16px; left:8px; bottom:6px;}
+  .nw .b {padding:8px 10px; min-width:0;} .nw .t {font-size:15px;} .nw .d {display:none;} .nw .m {font-size:10px; margin-top:4px;}
+  .shield {padding:10px 12px; font-size:13px;}
+  /* --- prochain GP --- */
+  .nx {padding:16px 16px 16px 16px; min-height:0;}
+  .nx img.trk {top:16px; right:12px; transform:none; height:auto; width:26%; max-width:110px;}
+  .nx b {font-size:26px; padding-right:28%;} .nx .s {padding-right:28%;} .nx .cd {font-size:17px;}
+  /* --- calendrier : GP courus en lignes --- */
+  .cal {gap:10px;}
+  .cal.past .cc {min-height:70px; height:70px;}
+  .cal.past .cc .r {font-size:28px; top:50%; transform:translateY(-50%); left:12px;}
+  .cal.past .cc .stt, .cal.past .cc .b .c {display:none;}
+  .cal.past .cc .b {left:58px; right:76px !important; bottom:12px;}
+  .cal.past .cc .b b {font-size:19px;} .cal.past .cc .b .f {font-size:10px;}
+  .cal.past .cc .trk {height:46px; bottom:12px; right:12px; max-width:64px;}
+  .times td.note {display:none;} .times td {padding:8px 6px; font-size:13px;} .times td.n {font-size:15px;}
+  /* --- classement --- */
+  .st-key-stdbar [data-testid="stHorizontalBlock"] {gap:8px !important;}
+  .lead3 {grid-template-columns:repeat(3, minmax(0, 1fr)) !important; gap:6px !important;}
+  .lb {height:196px !important; background:linear-gradient(180deg, color-mix(in srgb, var(--c) 85%, #000) 0 58%, #0e1015 58% 100%) !important;}
+  .lb .num {font-size:84px !important; right:-4px; top:-6px;}
+  .lb .pic {width:100%; bottom:auto; height:118px;}
+  .lb .pic img {width:190%; top:6%;}
+  .lb .inf {left:8px; right:8px; top:6px; bottom:8px; width:auto;}
+  .lb .pos {font-size:24px !important;}
+  .lb .fn, .lb .tm, .lb .gp {display:none !important;}
+  .lb .ln {font-size:15px !important; margin-top:auto;}
+  .lb .pt {margin-top:2px !important;} .lb .pt b {font-size:20px !important;} .lb .pt small {font-size:10px;}
+  .card.scroll {padding:8px 6px;}
+  table.std .rn b {max-width:150px; white-space:normal !important; overflow:visible; line-height:1.15; word-break:keep-all;}
+  table.std .rc {gap:6px;} table.std .rc .fl, table.std .rn b .fl {display:none;}
+  table.std .lp {min-width:20px; margin-left:1px; padding:1px 2px; font-size:11px;}
+  table.std th {font-size:10px; letter-spacing:.4px;}
+  /* --- fiche pilote --- */
+  .rhead {flex-direction:column-reverse; align-items:stretch; padding:16px 16px 0 !important; min-height:0;}
+  .rhead img {height:270px !important; align-self:center; margin-top:-10px;}
+  .rhead .i {padding-bottom:6px;}
+  .rhead h1 {font-size:clamp(26px, 10vw, 46px) !important; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .rhead .fn {font-size:14px;} .rhead .s {font-size:13px;} .rhead:before {font-size:180px !important;}
+  .tiles {grid-template-columns:none; grid-auto-flow:column; grid-auto-columns:132px; overflow-x:auto; scrollbar-width:none; padding-bottom:4px;}
+  .tile b {font-size:28px;} .tile span {font-size:10px; letter-spacing:.6px;}
+  .card svg text.xl {display:none;} .card svg text.yl {font-size:24px;}
+  /* --- lisibilité --- */
+  .note, .sec small {font-size:13px;}
+  .mini .l .g {font-size:12px;}
 }
 </style>
 """
@@ -2013,9 +2162,10 @@ def session_tile(ev, s, rows, zone, fav, show_idx, stakes, grid=None, today=None
         state = "<span class='pill live'>● Direct</span>"
     else:
         state = ""
-    sub = []
+    sub, subcls = [], "cd"
     if s.get("weather") and (session_done(s) or live):
         sub.append(f"{s['weather']} · {TRACK_FR.get(norm(s['track']), 'piste ' + norm(s['track']))}" + (f" · {s['air']}" if s.get("air") else ""))
+        subcls = "wx"
     elif not session_done(s) and s["utc"] > now_utc():
         sub.append(countdown(s["utc"]) + (" · horaire provisoire" if s.get("provisional") else ""))
     key = seen_key(ev, s["group"]) if s["group"] else ""
@@ -2033,12 +2183,12 @@ def session_tile(ev, s, rows, zone, fav, show_idx, stakes, grid=None, today=None
     elif session_done(s):
         body = extra + "<div class='wt note'>Résultat pas encore publié</div>"
     return (f"<div class='{cls}'><div class='top'><span class='t'>{hm(s['utc'], zone)}</span>"
-            f"<span class='nm'>{esc(s['label'])}<small>{esc(' · '.join(sub))}</small></span><span class='st'>{state}</span></div>"
+            f"<span class='nm'>{esc(s['label'])}<small class='{subcls}'>{esc(' · '.join(sub))}</small></span><span class='st'>{state}</span></div>"
             f"{body}</div>")
 
 
 def timeline(ev, sess, res, zone, fav, show_idx, stakes, cat="MotoGP", pays="FR"):
-    """Le week-end en 3 colonnes : vendredi, samedi, dimanche. Les courses portent leur bouton replay."""
+    """Le week-end en 3 colonnes : vendredi, samedi, dimanche (une colonne sur téléphone, en lignes compactes)."""
     grid = grid_of(res)
     days = {}
     for s in sess:
@@ -2047,10 +2197,11 @@ def timeline(ev, sess, res, zone, fav, show_idx, stakes, cat="MotoGP", pays="FR"
     cols = []
     for d in sorted(days):
         tiles = "".join(session_tile(ev, s, res.get(s["code"]) or [], zone, fav, show_idx, stakes,
-                                     grid if s["code"] in ("SPR", "RAC") else None,
-                                     extra=replay_buttons(ev, s, cat, pays)) for s in days[d])
+                                     grid if s["code"] in ("SPR", "RAC") else None) for s in days[d])
         cls = "dh today" if d == today else "dh"
-        cols.append(f"<div class='day'><div class='{cls}'>{JOURS[d.weekday()]}<span>{day_num(d)} {MOIS[d.month - 1]}</span></div>{tiles}</div>")
+        wx = next((x for x in days[d] if x.get("weather") and session_done(x)), None)  # météo du jour (téléphone)
+        dwx = f"<i class='dwx'>{esc(wx['weather'])}{' · ' + esc(wx['air']) if wx.get('air') else ''}</i>" if wx else ""
+        cols.append(f"<div class='day'><div class='{cls}'>{JOURS[d.weekday()]}<span>{day_num(d)} {MOIS[d.month - 1]}</span>{dwx}</div>{tiles}</div>")
     n = len(cols)
     return f"<div class='tl' style='grid-template-columns:repeat({max(1, min(n, 3))}, 1fr)'>{''.join(cols)}</div>" if cols else ""
 
@@ -2171,10 +2322,22 @@ def replay_buttons(ev, s, cat, pays):
     kind = "sprint" if s["code"] == "SPR" else "race"
     canal = find_video(ev, "canal", kind, cat)
     href = yt_url(canal) if canal else canal_search_url(ev, kind, cat)
-    mins = f" <small>{canal['mins']} min</small>" if canal and canal.get("mins") else ""
-    what = "du sprint" if kind == "sprint" else "de la course"
-    return (f"<div class='rpbs'><a class='rpb canal' href='{esc(href)}' target='_blank' rel='noopener'>"
-            f"<span class='pl'></span>Résumé {what} <b>CANAL+</b>{mins}</a></div>")
+    mins = f"<small>{canal['mins']} min</small>" if canal and canal.get("mins") else ""
+    what = ("Sprint" if kind == "sprint" else "Grand Prix") if cat == "MotoGP" else f"Course {cat}"
+    main = " main" if cat == "MotoGP" else ""
+    return (f"<a class='rpk{main}' href='{esc(href)}' target='_blank' rel='noopener'><span class='pl'></span>"
+            f"<span class='tx'><i>Résumé CANAL+</i><b>{esc(what)}</b></span>{mins}</a>")
+
+
+def replays_block(ev, wk, pays):
+    """Les replays du GP, bien en vue sous la bannière dès qu'une course est finie."""
+    btns = []
+    for cat, code in (("MotoGP", "SPR"), ("MotoGP", "RAC"), ("Moto2", "RAC"), ("Moto3", "RAC")):
+        x = next((y for y in wk.get(cat) or [] if y["code"] == code), None)
+        if x:
+            btns.append(replay_buttons(ev, x, cat, pays))
+    btns = [b for b in btns if b]
+    return f"<div class='rpg'>{''.join(btns)}</div>" if btns else ""
 
 
 def grid_of(res):
@@ -2358,19 +2521,22 @@ def gp_page(ctx):
     evs, zone, fav = ctx["evs"], ctx["zone"], ss.get("fav")
     ev = pick_event(evs, ss.get("gp"))
     i = evs.index(ev)
-    prv = link(f"vue=gp&gp={evs[i - 1]['code']}", f"<span>‹</span><em>{esc(evs[i - 1]['name'])}</em>", "gpn") if i > 0 else "<span></span>"
-    nxt = link(f"vue=gp&gp={evs[i + 1]['code']}", f"<em>{esc(evs[i + 1]['name'])}</em><span>›</span>", "gpn r") if i < len(evs) - 1 else "<span></span>"
-    st.markdown(f"<div class='gpbar'>{prv}{link('vue=calendrier', '📅 Tous les GP', 'gpn c')}{nxt}</div>", unsafe_allow_html=True)
+    prv = link(f"vue=gp&gp={evs[i - 1]['code']}", f"<span>‹</span><em>{esc(gp_short(evs[i - 1]))}</em>", "gpn") if i > 0 else "<span></span>"
+    nxt = link(f"vue=gp&gp={evs[i + 1]['code']}", f"<em>{esc(gp_short(evs[i + 1]))}</em><span>›</span>", "gpn r") if i < len(evs) - 1 else "<span></span>"
+    st.markdown(f"<div class='gpbar'>{prv}{link('vue=calendrier', '📅<em> Tous les GP</em>', 'gpn c')}{nxt}</div>", unsafe_allow_html=True)
     cat_ids, results, cut = ctx["cat_ids"], ctx["results"], ctx["cut"]
     wk = weekend(ev, cat_ids)
     msess = wk.get("MotoGP") or []
     st.markdown(gp_hero(ev, msess, zone, total=len(evs)), unsafe_allow_html=True)
     allcls = reveal_toggle(f"reveal_{ev['code']}", ctx, ev, wk)
+    rp = replays_block(ev, wk, ss.opts["pays"])
+    if rp:
+        st.markdown(sec_title("Les replays", "résumés CANAL+ Sport, en français") + rp, unsafe_allow_html=True)
     current = ev is pick_event(evs)
     if current and fav:
         st.markdown(fav_band(ctx, msess, evs, cut), unsafe_allow_html=True)
 
-    st.markdown(sec_title("Le week-end", f"heures de {ctx['zone_name']} · ▶ = replay"), unsafe_allow_html=True)
+    st.markdown(sec_title("Le week-end", f"heures de {ctx['zone_name']}"), unsafe_allow_html=True)
     cat = ss.get("cat", "MotoGP")
     cat = st.segmented_control("Catégorie", CATS, default=cat, key="cat_pick", label_visibility="collapsed") or cat
     ss.cat = cat
@@ -2407,11 +2573,11 @@ def gp_page(ctx):
             html_cards = "".join(f"<div class='card {cls}'><span class='ico'>{ico}</span><h3>{esc(title)}</h3>"
                                  f"<div class='tease'>{esc(tease)}</div>{hidden('Voir', content, seen=keys)}</div>"
                                  for ico, title, tease, content, cls in cards)
-            parts.append(sec_title("Ce qu'il faut savoir", "MotoGP · caché tant que tu ne cliques pas") + f"<div class='bf-grid'>{html_cards}</div>")
+            parts.append(sec_title("Ce qu'il faut savoir", "MotoGP · caché tant que tu ne cliques pas") + f"<div class='bf-grid know'>{html_cards}</div>")
     if current:
-        items = news(bucket(600))[:4]
+        items = news(bucket(600))[:40]
         if items:
-            parts.append(sec_title("Les actus", "", link("vue=actus", "Toutes les actus ›")) + news_html(items, ctx))
+            parts.append(sec_title("Les actus", "", link("vue=actus", "Toutes les actus ›")) + news_html(items, ctx, limit=4))
     nev = next((e for e in evs if e["start"] > max(now_utc().date(), ev["end"])), None)
     if nev and current:
         parts.append(sec_title("Et après") + next_gp_card(nev, ctx))
@@ -2435,9 +2601,8 @@ def calendar_page(ctx):
     evs, zone = ctx["evs"], ctx["zone"]
     today = now_utc().date()
     nxt = next((e for e in evs if e["end"] >= today), None)
-    st.markdown(sec_title(f"La saison {ctx['year']}", f"{len(evs)} Grands Prix · clique sur un GP pour l'ouvrir"), unsafe_allow_html=True)
-    out = []
-    for e in evs:
+
+    def card(e):
         m = event_meta(e)
         if e["start"] <= today <= e["end"]:
             cls, stt = "cc live", "<span class='pill live'>● En cours</span>"
@@ -2450,20 +2615,28 @@ def calendar_page(ctx):
         fl = f"<img src='{esc(m['flag'])}' alt=''>" if m.get("flag") else flag(e["iso"])
         trk = f"<img class='trk' src='{esc(m['track'])}' alt=''>" if m.get("track") else ""
         img = m.get("bg") or m.get("top") or ""
-        out.append(f"<a class='{cls}' href='#go?vue=gp&gp={e['code']}' style=\"--img:url('{esc(img)}')\"><span class='r'>{e['round']}</span>"
-                   f"<span class='stt'>{stt}</span>{trk}<div class='b'><div class='f'>{fl} {esc(fr_range(e['start'], e['end']))}</div>"
-                   f"<b>{esc(e['name'])}</b><span class='c'>{esc(e['circuit'])}</span></div></a>")
-    st.markdown(f"<div class='cal'>{''.join(out)}</div>", unsafe_allow_html=True)
+        return (f"<a class='{cls}' href='#go?vue=gp&gp={e['code']}' style=\"--img:url('{esc(img)}')\"><span class='r'>{e['round']}</span>"
+                f"<span class='stt'>{stt}</span>{trk}<div class='b'><div class='f'>{fl} {esc(fr_range(e['start'], e['end']))}</div>"
+                f"<b>{esc(e['name'])}</b><span class='c'>{esc(e['circuit'])}</span></div></a>")
+
+    coming = [e for e in evs if e["end"] >= today]
+    past = [e for e in evs if e["end"] < today]
+    st.markdown(sec_title(f"La saison {ctx['year']}", f"{len(evs)} Grands Prix · {len(coming)} à venir"), unsafe_allow_html=True)
+    if coming:
+        st.markdown(f"<div class='cal'>{''.join(card(e) for e in coming)}</div>", unsafe_allow_html=True)
     if nxt:
         sess = sessions(nxt, ctx["cat_ids"]["MotoGP"])
         if sess:
-            st.markdown(sec_title(f"Les horaires du {nxt['name']}", f"MotoGP · heures de {ctx['zone_name']}"), unsafe_allow_html=True)
+            st.markdown(sec_title(f"Les horaires · {gp_short(nxt)}", f"MotoGP · heures de {ctx['zone_name']}"), unsafe_allow_html=True)
             rows = "".join(f"<tr class='{'race' if s['code'] in ('SPR', 'RAC') else ''}'><td class='n'>{esc(s['label'])}</td>"
                            f"<td>{when_txt(s['utc'], zone)}</td><td class='note'>{countdown(s['utc']) if s['utc'] > now_utc() else ''}</td></tr>"
                            for s in sess)
             st.markdown(f"<div class='card'><table class='times'>{rows}</table></div>", unsafe_allow_html=True)
             st.download_button("📅 Ajouter les séances à mon agenda", ics_calendar(nxt, sess), file_name=f"motogp_{nxt['code']}.ics",
                                mime="text/calendar", key="ics")
+    if past:
+        st.markdown(sec_title("Déjà courus", f"{len(past)} Grands Prix · du plus récent au plus ancien"), unsafe_allow_html=True)
+        st.markdown(f"<div class='cal past'>{''.join(card(e) for e in reversed(past))}</div>", unsafe_allow_html=True)
 
 
 def ics_calendar(ev, sess):
@@ -2504,7 +2677,9 @@ def standings_page(ctx):
     cut = spoil_cut(results, ss.seen, ctx["show_all"])
     if cut:
         with c3:
-            if st.toggle("Inclure le dernier GP", key="inc_last"):
+            cev = next((e for e, ss_, r in results if any(seen_key(e, x["group"]) in cut for x in ss_ if x["group"])), None)
+            if st.toggle(f"Compter le {gp_short(cev) if cev else 'dernier GP'}", key="inc_last",
+                         help="Tant que tu n'as pas ouvert ce GP, le classement s'arrête avant (sans spoil)."):
                 cut = set()
     st.markdown(sec_title(f"Championnat {cat} {ctx['year']}", esc(cut_note(cut, ctx)) or kind), unsafe_allow_html=True)
     fav = ss.get("fav")
@@ -2590,7 +2765,7 @@ def pos_svg(rows, color="#e10600"):
     area = f"{X(pts[0][0]):.0f},{h - 22} " + line + f" {X(pts[-1][0]):.0f},{h - 22}"
     dots, labels = [], []
     for i, r in enumerate(rows):
-        labels.append(f"<text x='{X(i):.0f}' y='{h - 6}' fill='#6f7787' font-size='10' text-anchor='middle'>{esc(r[0]['code'])}</text>")
+        labels.append(f"<text class='xl' x='{X(i):.0f}' y='{h - 6}' fill='#6f7787' font-size='10' text-anchor='middle'>{esc(r[0]['code'])}</text>")
         rc = r[3]
         if not rc:
             continue
@@ -2599,7 +2774,7 @@ def pos_svg(rows, color="#e10600"):
         dots.append(f"<circle cx='{X(i):.0f}' cy='{Y(p):.0f}' r='{6 if p and p <= 3 else 4.5}' fill='{col}' stroke='#06070a' stroke-width='2'>"
                     f"<title>{esc(r[0]['name'])} : {nth(p) if p else 'abandon'}</title></circle>")
     grid = "".join(f"<line x1='30' x2='{w - 14}' y1='{Y(p):.0f}' y2='{Y(p):.0f}' stroke='rgba(255,255,255,.06)'/>"
-                   f"<text x='4' y='{Y(p) + 4:.0f}' fill='#6f7787' font-size='10'>{nth(p)}</text>" for p in (1, 5, 10, 15, 20))
+                   f"<text class='yl' x='4' y='{Y(p) + 4:.0f}' fill='#6f7787' font-size='10'>{nth(p)}</text>" for p in (1, 5, 10, 15, 20))
     return (f"<div class='card'><svg viewBox='0 0 {w} {h}' width='100%'><defs><linearGradient id='ga' x1='0' y1='0' x2='0' y2='1'>"
             f"<stop offset='0' stop-color='{color}' stop-opacity='.45'/><stop offset='1' stop-color='{color}' stop-opacity='0'/></linearGradient></defs>"
             f"{grid}<polygon points='{area}' fill='url(#ga)'/><polyline points='{line}' fill='none' stroke='{color}' stroke-width='2.5' "
@@ -2614,10 +2789,8 @@ def rider_page(ctx, rid):
     cut = spoil_cut(results, ss.seen, ctx["show_all"])
     table = standings(results, cut)
     me = next((t for t in table if t["rid"] == rid), None)
-    c1, c2 = st.columns([1, 1])
-    if c1.button("‹ Tous les pilotes", key="back_riders"):
-        ss.rider = None
-        st.rerun()
+    st.markdown(f"<div class='gpbar'>{link('vue=pilotes&pilote=', '<span>‹</span><em>Tous les pilotes</em>', 'gpn')}</div>",
+                unsafe_allow_html=True)
     age = f"{info['age']} ans · " if info.get("age") else ""
     born = f"né à {esc(info.get('city'))} ({esc(info.get('country'))})" if info.get("city") else esc(info.get("country", ""))
     img = f"<img src='{esc(info['photo'])}' alt=''>" if info.get("photo") else ""
@@ -2643,7 +2816,7 @@ def rider_page(ctx, rid):
             if not r:
                 return "–"
             return nth(r["pos"]) if r["pos"] else "<span style='color:var(--red2)'>ab.</span>"
-        trs = "".join(f"<tr><td class='l'>{flag(ev['iso'])} {gp_link(ev, esc(ev['name']))}</td><td>{nth(q) if q else '–'}</td>"
+        trs = "".join(f"<tr><td class='l'>{flag(ev['iso'])} {gp_link(ev, esc(gp_short(ev)))}</td><td>{nth(q) if q else '–'}</td>"
                       f"<td>{cell(sp)}</td><td>{cell(rc)}</td><td class='pts'>{pts}</td></tr>" for ev, q, sp, rc, pts in reversed(rows))
         st.markdown(sec_title("GP par GP", "Grille · sprint · course · points") + f"<div class='card scroll'><table class='std'><tr>"
                     f"<th class='l'>Grand Prix</th><th>Grille</th><th>Sprint</th><th>Course</th><th>Pts</th></tr>{trs}</table></div>",
@@ -2665,7 +2838,7 @@ def riders_page(ctx):
     riders = [r for r in ctx["riders"].values() if r.get("cat") == cat and r.get("in_grid", True)]
     order = {t["rid"]: t["rank"] for t in (ctx["table"] if cat == "MotoGP" else [])}
     riders.sort(key=lambda r: (order.get(r["id"], 99), r.get("team", ""), r.get("last", "")))
-    st.markdown(sec_title(f"La grille {cat} {ctx['year']}", "Clique sur un pilote pour sa fiche · ⭐ = mon pilote"), unsafe_allow_html=True)
+    st.markdown(sec_title(f"La grille {cat} {ctx['year']}", "Touche un pilote pour ouvrir sa fiche"), unsafe_allow_html=True)
     pays = ss.opts["pays"]
     tiles = []
     for r in riders:
@@ -2693,49 +2866,58 @@ def img_proxy(u):
     return u
 
 
-def news_html(items, ctx):
-    spoil = ctx["spoil_from"]
+def news_cards(items):
     out = []
     for n in items:
         pub = parse_dt(n["pub"])
         when = rel_time(pub) if pub else ""
         img = (f"<div class='im'><img src='{esc(img_proxy(n['img']))}' loading='lazy' referrerpolicy='no-referrer' alt=''></div>"
                if n.get("img") else "<div class='im'></div>")
-        card = (f"<a class='nw' href='{esc(n['link'])}' target='_blank' rel='noopener'>{img}<div class='b'>"
-                f"<div class='t'>{esc(n['title'])}</div><div class='d'>{esc(n['desc'][:170])}</div>"
-                f"<div class='m'>{esc(n['source'])} · {esc(when)}</div></div></a>")
-        if spoil and pub and pub >= spoil[0]:
-            i = uid("n")
-            _, ev, s = spoil
-            out.append(f"<div class='nwx'><input type='checkbox' id='{i}' class='tg'><label for='{i}'>⚠️ Peut spoiler"
-                       f"<small>publié après le début : {esc(s['label'])} · {esc(ev['name'])}</small><em>👁 Afficher</em></label>{card}</div>")
-        else:
-            out.append(card)
+        out.append(f"<a class='nw' href='{esc(n['link'])}' target='_blank' rel='noopener'>{img}<div class='b'>"
+                   f"<div class='t'>{esc(n['title'])}</div><div class='d'>{esc(n['desc'][:170])}</div>"
+                   f"<div class='m'>{esc(n['source'])} · {esc(when)}</div></div></a>")
     return f"<div class='news'>{''.join(out)}</div>"
 
 
+def news_split(items, ctx):
+    """(actus sans risque, actus qui peuvent spoiler : publiées après le début de la 1re séance non vue)."""
+    spoil = ctx["spoil_from"]
+    if not spoil:
+        return items, []
+    safe, risky = [], []
+    for n in items:
+        pub = parse_dt(n["pub"])
+        (risky if pub and pub >= spoil[0] else safe).append(n)
+    return safe, risky
+
+
+def news_html(items, ctx, limit=None):
+    """Actus sans risque en clair ; celles qui peuvent spoiler regroupées dans UN bloc à déplier (plus de mur de flou)."""
+    safe, risky = news_split(items, ctx)
+    out = ""
+    if risky:
+        _, ev, s = ctx["spoil_from"]
+        out += (f"<div class='shield'><span>🛡️ <b>{len(risky)} actu{'s' if len(risky) > 1 else ''} masquée{'s' if len(risky) > 1 else ''}</b>"
+                f" · publiée{'s' if len(risky) > 1 else ''} après le début de {esc(s['label'])} du {esc(ev['name'])}</span>"
+                f"{hidden('Afficher quand même', news_cards(risky))}</div>")
+    if safe:
+        out += news_cards(safe[:limit] if limit else safe)
+    return out
+
+
 def news_page(ctx):
-    ss = st.session_state
     items = news(bucket(600))
     st.markdown(sec_title("Les actus", "Motorsport.com France et Paddock GP · en français"), unsafe_allow_html=True)
-    spoil = ctx["spoil_from"]
-    if spoil:
-        _, ev, s = spoil
-        st.markdown(f"<div class='shield'>🛡️ <b>Bouclier anti-spoil</b> : les articles publiés après le début de "
-                    f"<b>{esc(s['label'])}</b> du {esc(ev['name'])} sont floutés tant que tu n'as pas ouvert ce GP. "
-                    f"Un clic sur un article l'affiche.</div>", unsafe_allow_html=True)
     who = st.segmented_control("Filtre", ["Tout", "MotoGP", "Moto2 / Moto3"], default="Tout", key="news_f",
                                label_visibility="collapsed") or "Tout"
     if who == "MotoGP":
         items = [n for n in items if not re.search(r"moto ?[23]\b", n["title"], re.I)]
     elif who == "Moto2 / Moto3":
         items = [n for n in items if re.search(r"moto ?[23]\b", n["title"] + " " + n["link"], re.I)]
-    allcls = " all" if ctx["show_all"] else ""
-    if spoil and not ctx["show_all"] and st.toggle("👁 Tout dévoiler (même les actus qui peuvent spoiler)", key="news_all"):
-        allcls = " all"
     if not items:
         st.markdown("<p class='note'>Aucune actu pour le moment.</p>", unsafe_allow_html=True)
         return
+    allcls = " all" if ctx["show_all"] else ""
     st.markdown(f"<div class='{allcls}'>{news_html(items[:40], ctx)}</div>", unsafe_allow_html=True)
 
 
@@ -2861,7 +3043,7 @@ def main():
 
 
     with st.container(key="tabs"):
-        cols = st.columns([1] * len(TABS) + [0.32])
+        cols = st.columns([1] * len(TABS) + [0.32], gap="small")
         with cols[-1].popover("", icon=":material/settings:", use_container_width=True, help="Réglages"):
             settings_panel(ctx)
         for (key, label, icon), col in zip(TABS, cols):
