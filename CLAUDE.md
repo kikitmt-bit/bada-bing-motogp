@@ -114,7 +114,7 @@ Lieux acceptés dans les titres : `GP_FR_ALIAS` (« Amériques », « Catalogne 
 
 ## v-m016 : refonte téléphone (audit, étapes 1 à 4)
 Tout dans le bloc `@media (max-width: 700px)` de fin de CSS ; le PC ne change presque pas.
-- Onglets (téléphone) = barre FIXÉE à `--tabtop` px du haut (66 par défaut : la bande de Streamlit Cloud descend jusqu’à ~65 px, mesuré par Kiki avec ?barre=36 ; réglable par `?barre=`), PAS à 0 : sur Streamlit Cloud, la bande transparente du haut
+- Onglets (téléphone) = barre FIXÉE à `--tabtop` px du haut (66 par défaut : la bande de Streamlit Cloud descend jusqu’à ~65 px, mesuré par Kiki avec ?barre=36 ; réglable par `?barre=`), PAS à 0 ; le titre « Bada Bing MotoGP » est fixé dans la bande au-dessus (non cliquable, donc sans souci) : sur Streamlit Cloud, la bande transparente du haut
   (Share, étoile, crayon, GitHub) avale les touchers en haut de l'écran, et « Manage app » couvre le bas droit. Icône au-dessus du mot, onglet actif en rouge, roue des réglages en petite icône grise au bout.
 - Bannière compacte : photo moins haute, fiche circuit avec les 4 chiffres sur une ligne sous le tracé.
 - « Tout dévoiler » (`.st-key-tools`) = pastille flottante en bas à GAUCHE (le coin bas droit est pris par « Manage app »).

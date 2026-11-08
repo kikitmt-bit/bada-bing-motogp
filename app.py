@@ -27,7 +27,7 @@ try:
 except Exception:  # pragma: no cover
     components = None
 
-APP_VERSION = "2026-11-m020"
+APP_VERSION = "2026-11-m021"
 HERE = os.path.dirname(os.path.abspath(__file__))
 CACHE_DIR = os.path.join(HERE, ".cache")
 log = logging.getLogger("motogp")
@@ -1988,11 +1988,11 @@ a.nw:hover {transform:translateY(-3px);}
 }
 @media (max-width: 700px) {
   /* --- barre d'onglets fixée en bas, comme une application --- */
-  .block-container {padding-bottom:70px !important; padding-top:calc(var(--tabtop, 66px) + 70px) !important;}
+  .block-container {padding-bottom:70px !important; padding-top:calc(var(--tabtop, 66px) + 28px) !important;}
+  .brand {position:fixed; z-index:1000; left:14px; top:calc(var(--tabtop, 66px) / 2 - 13px); pointer-events:none;}
   .st-key-tabs {position:fixed !important; top:var(--tabtop, 66px) !important; bottom:auto !important; left:0 !important; right:0 !important;
     z-index:999; margin:0 !important; padding:4px 4px !important; border-bottom:1px solid var(--line) !important;
-    box-shadow:0 -160px 0 160px #06070a; background:#06070a !important; backdrop-filter:none !important;
-    background:rgba(6,7,10,.97) !important; border-bottom:1px solid var(--line) !important;}
+    box-shadow:0 -160px 0 160px #06070a; background:#06070a !important; backdrop-filter:none !important;}
   .st-key-tabs [data-testid="stHorizontalBlock"] {flex-wrap:nowrap !important; gap:2px !important; overflow:visible;}
   .st-key-tabs [data-testid="stColumn"] {flex:1 1 0 !important; min-width:0 !important; width:auto !important;}
   .st-key-tabs [data-testid="stColumn"]:last-child {flex:0 0 30px !important;}
@@ -2010,7 +2010,7 @@ a.nw:hover {transform:translateY(-3px);}
   .st-key-tabs button[data-testid="stBaseButton-primary"] p, .st-key-tabs button[data-testid="stBaseButton-primary"] [data-testid="stIconMaterial"] {color:var(--red2) !important;}
   .st-key-tabs [data-testid="stPopover"] button {min-height:50px !important; opacity:.45;}
   .st-key-tabs [data-testid="stPopover"] button [data-testid="stIconMaterial"] {font-size:17px !important;}
-  .brand .lg {font-size:22px;}
+  .brand .lg {font-size:24px;}
   /* --- navigation entre GP --- */
   .stMarkdown a.gpn {font-size:14px;} .stMarkdown a.gpn.c em {display:none;}
   /* --- bannière compacte --- */
