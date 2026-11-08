@@ -27,7 +27,7 @@ try:
 except Exception:  # pragma: no cover
     components = None
 
-APP_VERSION = "2026-11-m011"
+APP_VERSION = "2026-11-m012"
 HERE = os.path.dirname(os.path.abspath(__file__))
 CACHE_DIR = os.path.join(HERE, ".cache")
 log = logging.getLogger("motogp")
@@ -1779,6 +1779,36 @@ table.std .rk {font:900 italic 19px var(--D); text-align:center; width:34px;}
   font:700 12px var(--D); text-align:center;}
 .lp.w {background:var(--gold); color:#000;} .lp.pod {background:#3b4250;} .lp.x {background:rgba(225,6,0,.3); color:#ff9a95;}
 .scroll {overflow-x:auto;}
+/* ---------- podium du championnat, façon habillage TV ---------- */
+.lead3 {display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:14px; margin:4px 0 18px;}
+.stMarkdown a.lb {color:#fff !important;}
+.lb {position:relative; display:block; height:210px; border-radius:14px; overflow:hidden; isolation:isolate; text-decoration:none;
+  border:1px solid var(--line); transition:transform .15s, box-shadow .15s;
+  background:linear-gradient(112deg, #0e1015 0 47%, color-mix(in srgb, var(--c) 92%, #000) 47% 100%);}
+.lb:hover {transform:translateY(-3px); box-shadow:0 18px 40px rgba(0,0,0,.55);}
+.lb:before {content:''; position:absolute; left:0; right:0; top:0; height:4px; z-index:4; background:var(--m);}
+.lb.r1 {--m:var(--gold);} .lb.r2 {--m:var(--silver);} .lb.r3 {--m:var(--bronze);}
+.lb.r1 {box-shadow:0 0 0 1px rgba(243,195,78,.45), 0 20px 50px rgba(243,195,78,.1);}
+.lb:after {content:''; position:absolute; inset:0; z-index:-1; pointer-events:none;
+  background:repeating-linear-gradient(112deg, transparent 0 14px, rgba(255,255,255,.035) 14px 28px),
+             linear-gradient(0deg, rgba(0,0,0,.35), transparent 60%);}
+.lb .num {position:absolute; right:-6px; top:-14px; z-index:0; font:900 italic 190px/1 var(--D); color:transparent;
+  -webkit-text-stroke:2px rgba(255,255,255,.28); letter-spacing:-6px;}
+.lb .pic {position:absolute; right:0; top:0; bottom:0; width:52%; overflow:hidden; z-index:1;}
+.lb .pic img {position:absolute; left:50%; top:6%; width:150%; max-width:none; height:auto; transform:translateX(-50%);
+  filter:drop-shadow(-6px 6px 16px rgba(0,0,0,.55));}
+.lb .inf {position:absolute; left:18px; top:14px; bottom:14px; width:50%; z-index:2; display:flex; flex-direction:column; min-width:0;}
+.lb .pos {font:900 italic 46px/1 var(--D); color:var(--m);}
+.lb .fn {margin-top:auto; color:#c9ced8; font:600 13px var(--B); letter-spacing:1.5px; text-transform:uppercase; white-space:nowrap;}
+.lb .ln {font:900 italic 30px/1 var(--D); text-transform:uppercase; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+.lb .tm {display:flex; align-items:center; gap:6px; color:#9aa1ad; font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  margin-top:2px;}
+.lb .tm i {width:10px; height:10px; flex:none; background:var(--c); transform:skewX(-15deg); box-shadow:0 0 0 1px rgba(255,255,255,.3);}
+.lb .pt {display:flex; align-items:baseline; gap:6px; margin-top:8px; white-space:nowrap;}
+.lb .pt b {font:900 italic 34px/1 var(--D);}
+.lb .pt small {color:var(--mu); font:700 12px var(--B); text-transform:uppercase;}
+.lb .gp {margin-left:6px; padding:2px 8px; border-radius:4px; background:rgba(255,255,255,.08); font:800 13px var(--D); color:#d9dee6;}
+.lb .gp.lead {background:var(--gold); color:#000; text-transform:uppercase; letter-spacing:.8px;}
 /* ---------- pilotes ---------- */
 .rg {display:grid; grid-template-columns:repeat(auto-fill, minmax(190px, 1fr)); gap:12px;}
 .rt {position:relative; overflow:hidden; border-radius:16px; text-decoration:none; min-width:0; display:block; height:270px;
@@ -1862,6 +1892,9 @@ a.nw:hover {transform:translateY(-3px);}
   .bp-tb.tall {left:130px; right:125px; top:50px; bottom:36px;}
   .bp-tb.wide {left:14px; right:14px; top:112px; bottom:88px;} .bp-h, .bp-f {padding-left:0;}
   .bp-s.tl, .bp-s.bl {left:10px !important;} .bp-s.tr, .bp-s.br {right:10px;} .bp-s b {font-size:22px;}
+  .lead3 {grid-template-columns:1fr; gap:10px;}
+  .lb {height:184px;} .lb .num {font-size:150px;} .lb .pos {font-size:36px;}
+  .lb .ln {font-size:26px; line-height:1.12;} .lb .tm {margin-top:4px;} .lb .pt {margin-top:6px;} .lb .pt b {font-size:30px;}
   .bf-grid {grid-template-columns:1fr;}
   .top5.pod3 {gap:6px;} .pod3 .t5 {height:210px;} .pod3 .t5.r1 {height:250px;}
   .pod3 .t5 img {height:130px; bottom:78px;} .pod3 .t5.r1 img {height:165px;} .t5:before {font-size:70px;}
@@ -2424,14 +2457,18 @@ def standings_page(ctx):
     if kind == "Pilotes":
         table = standings(results, cut)
         top = []
-        for t in [table[i] for i in (1, 0, 2) if i < len(table)]:
+        for t in table[:3]:  # le podium du championnat, façon habillage TV
             info = rider_of(t["rid"], t["row"])
             img = f"<img src='{esc(info['photo'])}' loading='lazy' alt=''>" if info.get("photo") else ""
-            gap = f" <small>· -{t['gap']}</small>" if t["gap"] else ""
-            top.append(f"<div class='t5 r{t['rank']}' data-n='{esc(info.get('num') or '')}' style='--c:{esc(color_of(t['rid'], t['row']))}'>"
-                       f"<span class='p'>{t['rank']}</span>{img}<div class='b'><div class='n'>{rider_link(t['rid'], esc(short_name(info, t['row'])))}</div>"
-                       f"<div class='tm'>{flag(t['iso'])} {esc(t['team'])}</div><div class='pts'>{t['pts']} <small>pts</small>{gap}</div></div></div>")
-        st.markdown(f"<div class='top5 pod3'>{''.join(top)}</div>", unsafe_allow_html=True)
+            first = esc(info.get("first") or t["name"].split(" ")[0])
+            last = esc(info.get("last") or t["name"].split(" ")[-1])
+            gap = "<span class='gp lead'>Leader</span>" if not t["gap"] else f"<span class='gp'>−{t['gap']}</span>"
+            top.append(f"<a class='lb r{t['rank']}' href='#go?vue=pilotes&pilote={t['rid']}' style='--c:{esc(color_of(t['rid'], t['row']))}'>"
+                       f"<span class='num'>{esc(info.get('num') or '')}</span><span class='pic'>{img}</span>"
+                       f"<span class='inf'><span class='pos'>P{t['rank']}</span><span class='fn'>{flag(t['iso'])} {first}</span>"
+                       f"<span class='ln'>{last}</span><span class='tm'><i></i>{esc(t['team'])}</span>"
+                       f"<span class='pt'><b>{t['pts']}</b><small>pts</small>{gap}</span></span></a>")
+        st.markdown(f"<div class='lead3'>{''.join(top)}</div>", unsafe_allow_html=True)
         lead = max(table[0]["pts"], 1) if table else 1
         head_ = ("<tr><th class='rk'>#</th><th class='l'>Pilote</th><th>Pts</th><th class='hm'>Écart</th><th class='hm'>Vict.</th>"
                  "<th class='hm'>Podiums</th><th class='hm'>Sprints</th><th class='hm'>Poles</th><th class='l'>3 derniers GP</th></tr>")

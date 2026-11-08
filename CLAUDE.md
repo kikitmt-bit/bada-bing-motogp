@@ -97,3 +97,8 @@ ce GP : sinon spoil). Plus de bande de chiffres en dessous. Téléphone : photo 
   une zone réservée selon sa forme : tracé haut = entre les 2 colonnes de chiffres (`.bp-tb.tall`), tracé large (ratio ≥ 1,25) =
   entre les 2 rangées (`.bp-tb.wide`) : le plus grand possible sans chevauchement. Pillow dans requirements.txt.
 - Indice « à voir » (flammes) retiré : un seul GP à la fois, on le regarde de toute façon (réglage retiré aussi).
+
+## v-m012 : podium du championnat façon habillage TV (`.lead3`, `.lb`)
+3 bandeaux P1 · P2 · P3 (liseré or / argent / bronze) : fond sombre coupé en biais par la couleur de l'équipe, prénom + NOM,
+équipe, points + écart (« Leader » pour le 1er) ; à droite le pilote cadré tête + buste devant son numéro géant en contour.
+Lien vers la fiche du pilote. Téléphone : les 3 bandeaux empilés.
