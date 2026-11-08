@@ -27,7 +27,7 @@ try:
 except Exception:  # pragma: no cover
     components = None
 
-APP_VERSION = "2026-11-m014"
+APP_VERSION = "2026-11-m015"
 HERE = os.path.dirname(os.path.abspath(__file__))
 CACHE_DIR = os.path.join(HERE, ".cache")
 log = logging.getLogger("motogp")
@@ -953,6 +953,9 @@ def channel_uploads(channel, since_iso, _bucket=None):
     return out
 
 
+API_LOG = []
+
+
 @st.cache_data(ttl=6 * 3600, show_spinner=False, max_entries=300)
 def api_search(channel, query, after_iso, before_iso):
     """Recherche dans une chaîne par l'API YouTube (clé [youtube] api_key), limitée aux dates du GP : trouve les vidéos
@@ -967,8 +970,13 @@ def api_search(channel, query, after_iso, before_iso):
         r = SESSION.get("https://www.googleapis.com/youtube/v3/search", params=params, timeout=12)
     except Exception:
         return []
+    API_LOG.append(f"Recherche « {query} » : HTTP {r.status_code}")
     if r.status_code != 200:
         log.warning("Recherche API YouTube : HTTP %s", r.status_code)
+        try:
+            API_LOG.append("Raison : " + str(((r.json().get("error") or {}).get("message")) or "")[:200])
+        except Exception:
+            pass
         return []
     out = []
     for item in r.json().get("items") or []:
@@ -2772,6 +2780,31 @@ def zone_label(name):
     return {"Paris": "Paris", "Toronto": "Montréal", "Montreal": "Montréal"}.get(city, city)
 
 
+def diag_page(code, evs):
+    """Page de contrôle des replays : ?diag=BRA (un GP à la fois, pour ménager le quota YouTube)."""
+    ev = next((e for e in evs if e["code"] == code.upper()), None)
+    st.markdown(sec_title("Contrôle des replays CANAL+", "page technique : les titres des vidéos peuvent spoiler"), unsafe_allow_html=True)
+    if not ev:
+        st.write("GP inconnu. Codes : " + ", ".join(e["code"] for e in evs))
+        return
+    st.write(f"**{ev['name']}** · clé YouTube : {'présente' if _secret('youtube', 'api_key', '') else '**absente**'}")
+    api_search.clear()
+    store = found_videos()
+    for cat, kind in (("MotoGP", "sprint"), ("MotoGP", "race"), ("Moto2", "race"), ("Moto3", "race")):
+        k = f"{ev['start'].year}{ev['code']}_canal_{kind}_{cat}"
+        store.pop(k, None)
+        API_LOG.clear()
+        v = find_video(ev, "canal", kind, cat)
+        st.write(f"{cat} {kind} : " + (f"✅ [{v['title']}]({yt_url(v)})" if v else "❌ pas trouvée"))
+        for line in API_LOG:
+            st.caption(line)
+        if not v:
+            start = (datetime.combine(ev["start"], datetime.min.time()) - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+            end = (datetime.combine(ev["end"], datetime.min.time()) + timedelta(days=12)).strftime("%Y-%m-%dT%H:%M:%SZ")
+            seen = api_search(CANAL_CHANNEL, canal_query(ev, kind, cat), start, end)
+            st.caption("Titres renvoyés par YouTube : " + (" | ".join(x["title"] for x in seen[:8]) or "aucun"))
+
+
 def main():
     st.set_page_config(page_title="Bada Bing MotoGP", page_icon="🏍️", layout="wide", initial_sidebar_state="collapsed")
     st.markdown(CSS, unsafe_allow_html=True)
@@ -2821,6 +2854,9 @@ def main():
            "riders": riders, "results": results, "cut": cut, "show_all": show_all, "table": standings(results, cut),
            "spoil_from": spoil_since(results, ss.seen, show_all)}
 
+    if st.query_params.get("diag"):
+        diag_page(st.query_params.get("diag"), evs)
+        return
     st.markdown("<div class='brand'><span class='lg'>Bada Bing <i>MotoGP</i></span></div>", unsafe_allow_html=True)
 
 

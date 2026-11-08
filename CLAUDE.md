@@ -108,3 +108,6 @@ Canal+ Sport publie des dizaines de vidéos par jour : la liste des dernières m
 n'atteint que les GP récents. Pour les autres : `api_search` (API YouTube search, channelId + dates du GP, 100 unités de quota,
 cache 6 h, appelée seulement pour un GP affiché dont la vidéo n'est pas connue ; vidéo trouvée gardée dans `.cache/videos.json`).
 Lieux acceptés dans les titres : `GP_FR_ALIAS` (« Amériques », « Catalogne », « Saint-Marin »…). La clé est partagée avec le site NBA.
+
+- Page de contrôle des replays : `?diag=BRA` (un GP : clé présente ?, réponse HTTP de YouTube, titres renvoyés, vidéo trouvée).
+  Recherche API avec `regionCode=FR` (sinon les vidéos réservées à la France sont écartées : serveur aux USA).
