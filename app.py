@@ -27,7 +27,7 @@ try:
 except Exception:  # pragma: no cover
     components = None
 
-APP_VERSION = "2026-11-m009"
+APP_VERSION = "2026-11-m011"
 HERE = os.path.dirname(os.path.abspath(__file__))
 CACHE_DIR = os.path.join(HERE, ".cache")
 log = logging.getLogger("motogp")
@@ -1507,8 +1507,11 @@ div[data-testid="stElementContainer"]:has(> iframe[data-testid="stIFrame"]), div
              linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px) 0 0/20px 20px,
              linear-gradient(rgba(255,255,255,.07) 1px, transparent 1px) 0 0/100px 100px,
              linear-gradient(90deg, rgba(255,255,255,.07) 1px, transparent 1px) 0 0/100px 100px;}
-.bp-t {position:absolute; left:calc(50% + 70px); top:52%; transform:translate(-50%, -50%); height:150%; max-width:96%; object-fit:contain;
-  filter:drop-shadow(0 4px 14px rgba(0,0,0,.6)); z-index:1;}
+.bp-tb {position:absolute; z-index:1;}
+.bp-tb.tall {top:50px; bottom:38px; left:345px; right:205px;}
+.bp-tb.wide {top:118px; bottom:112px; left:165px; right:25px;}
+.bp-t {position:absolute; left:0; top:0; width:100%; height:100%; object-fit:contain;
+  filter:drop-shadow(0 4px 14px rgba(0,0,0,.6));}
 .bp-h {position:absolute; top:14px; left:140px; right:0; text-align:center; z-index:2; white-space:nowrap; overflow:hidden;
   text-overflow:ellipsis;}
 .bp-h span {display:block; color:var(--red2); font:700 10px var(--B); letter-spacing:3px; text-transform:uppercase;}
@@ -1855,7 +1858,9 @@ a.nw:hover {transform:translateY(-3px);}
   .hero2 h1 {font-size:40px;} .hcd b {font-size:26px;}
   .bp {height:250px; margin-left:0; padding-left:0; -webkit-mask-image:none; mask-image:none; border-top:3px solid var(--red);}
   .bp-h, .bp-f {left:0 !important;}
-  .bp-t {left:50% !important; height:130%;} .bp-h, .bp-f {padding-left:0;}
+  .bp {height:300px !important;}
+  .bp-tb.tall {left:130px; right:125px; top:50px; bottom:36px;}
+  .bp-tb.wide {left:14px; right:14px; top:112px; bottom:88px;} .bp-h, .bp-f {padding-left:0;}
   .bp-s.tl, .bp-s.bl {left:10px !important;} .bp-s.tr, .bp-s.br {right:10px;} .bp-s b {font-size:22px;}
   .bf-grid {grid-template-columns:1fr;}
   .top5.pod3 {gap:6px;} .pod3 .t5 {height:210px;} .pod3 .t5.r1 {height:250px;}
@@ -1930,7 +1935,7 @@ def session_tile(ev, s, rows, zone, fav, show_idx, stakes, grid=None, today=None
     body = ""
     if session_done(s) and rows:
         wt = ""
-        if race and show_idx:
+        if False:  # indice « à voir » retiré (v-m010)
             lvl = watch_level(watch_score(rows, grid, s, stakes))
             if lvl is not None:
                 ic, nm, _ = WATCH_LEVELS[lvl]
@@ -1961,6 +1966,37 @@ def timeline(ev, sess, res, zone, fav, show_idx, stakes, cat="MotoGP", pays="FR"
         cols.append(f"<div class='day'><div class='{cls}'>{JOURS[d.weekday()]}<span>{day_num(d)} {MOIS[d.month - 1]}</span></div>{tiles}</div>")
     n = len(cols)
     return f"<div class='tl' style='grid-template-columns:repeat({max(1, min(n, 3))}, 1fr)'>{''.join(cols)}</div>" if cols else ""
+
+
+@st.cache_data(ttl=7 * 86400, show_spinner=False, max_entries=60)
+def track_tight(url):
+    """Tracé recadré au plus près du dessin (les images MotoGP ont 17 à 40 % de marge vide, variable selon le circuit),
+    en image intégrée : il remplit alors exactement sa zone. Gardé sur disque."""
+    import base64
+    import hashlib
+    import io
+    name = "trk_" + hashlib.md5(url.encode()).hexdigest()[:12] + ".json"
+    cached = disk_get(name)
+    if cached:
+        return cached["src"], cached["ratio"]
+    try:
+        from PIL import Image
+        r = SESSION.get(url, timeout=12)
+        im = Image.open(io.BytesIO(r.content)).convert("RGBA")
+        box = im.getchannel("A").getbbox()
+        if not box:
+            return url, 1.0
+        pad = 6
+        im = im.crop((max(0, box[0] - pad), max(0, box[1] - pad), min(im.width, box[2] + pad), min(im.height, box[3] + pad)))
+        im.thumbnail((700, 700))
+        buf = io.BytesIO()
+        im.save(buf, "PNG", optimize=True)
+        out = {"src": "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode(), "ratio": im.width / max(im.height, 1)}
+        disk_put(name, out)
+        return out["src"], out["ratio"]
+    except Exception as e:
+        log.warning("Tracé non recadré (%s)", type(e).__name__)
+        return url, 1.0
 
 
 def lap_record(ev, sess):
@@ -2024,7 +2060,11 @@ def gp_hero(ev, sess, zone, nev=None, total=22):
         foot.append(f"Record <b>{esc(rec[0])}</b> · {esc(rec[1])} ({esc(rec[2])})")
     elif m.get("built"):
         foot.append(f"Construit en <b>{esc(m['built'])}</b>")
-    trk = f"<img class='bp-t' src='{esc(m['track'])}' alt='Tracé du circuit'>" if m.get("track") else ""
+    trk = ""
+    if m.get("track"):
+        src, ratio = track_tight(m["track"])
+        shape = "wide" if ratio >= 1.25 else "tall"  # tracé large : entre les 2 rangées de chiffres ; haut : entre les 2 colonnes
+        trk = f"<div class='bp-tb {shape}'><img class='bp-t' src='{src}' alt='Tracé du circuit'></div>"
     bp = (f"<div class='bp'><div class='bp-grid'></div>"
           f"<div class='bp-h'><span>Fiche circuit</span><b>{esc(ev['circuit'])}</b></div>{trk}{''.join(cells)}"
           f"<div class='bp-f'>{' · '.join(foot)}</div></div>") if trk else ""
@@ -2623,7 +2663,7 @@ def settings_panel(ctx):
     o = dict(ss.opts)
     pays = st.radio("Pays (« nos pilotes », vidéos)", ["FR", "CA"], index=["FR", "CA"].index(o["pays"]), horizontal=True,
                     format_func=lambda x: "🇫🇷 France" if x == "FR" else "🇨🇦 Canada", key="set_pays")
-    idx = st.toggle("Indice « à voir » des courses", value=o["indice"], key="set_idx")
+    idx = o["indice"]
     sc = st.toggle("Toujours montrer les résultats (pas de spoil caché)", value=o["scores"], key="set_sc")
     new = {"pays": pays, "indice": idx, "scores": sc}
     if new != o:

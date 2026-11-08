@@ -91,3 +91,9 @@ ce GP : sinon spoil). Plus de bande de chiffres en dessous. Téléphone : photo 
 ## v-m009
 - Tuiles : exactement 3 pilotes visibles (`.mini .ml` max-height 102 px = 3 lignes de 30 px), le reste en faisant défiler (arrêt net par ligne).
 - Bannière (PC) : le plan déborde de 140 px sur la photo avec un fondu (`mask-image`), plus de trait rouge. Téléphone : inchangé (trait rouge horizontal).
+
+## v-m010
+- Fiche circuit : tracé recadré au plus près par le serveur (`track_tight`, Pillow, image intégrée, `.cache/trk_*.txt`), affiché dans
+  une zone réservée selon sa forme : tracé haut = entre les 2 colonnes de chiffres (`.bp-tb.tall`), tracé large (ratio ≥ 1,25) =
+  entre les 2 rangées (`.bp-tb.wide`) : le plus grand possible sans chevauchement. Pillow dans requirements.txt.
+- Indice « à voir » (flammes) retiré : un seul GP à la fois, on le regarde de toute façon (réglage retiré aussi).
