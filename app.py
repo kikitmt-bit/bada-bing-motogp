@@ -27,7 +27,7 @@ try:
 except Exception:  # pragma: no cover
     components = None
 
-APP_VERSION = "2026-11-m006"
+APP_VERSION = "2026-11-m007"
 HERE = os.path.dirname(os.path.abspath(__file__))
 CACHE_DIR = os.path.join(HERE, ".cache")
 log = logging.getLogger("motogp")
@@ -1482,6 +1482,57 @@ div[data-testid="stElementContainer"]:has(> iframe[data-testid="stIFrame"]), div
 .hstats b {display:block; font:800 italic 26px/1 var(--D); color:#fff; white-space:nowrap;}
 .hstats b small {font-size:15px; color:var(--mu); font-style:normal;}
 .hstats span {color:var(--mu); font-size:11px; text-transform:uppercase; letter-spacing:1.4px; white-space:nowrap;}
+/* ---------- bannière du GP : photo + fiche circuit façon plan ---------- */
+.hero2 {position:relative; display:grid; grid-template-columns:minmax(0, 1.12fr) minmax(0, 1fr); height:340px; margin:6px 0 8px;
+  border-radius:18px; overflow:hidden; border:1px solid var(--line); background:#05070b; box-shadow:0 30px 80px rgba(0,0,0,.55);}
+.hero2.solo {grid-template-columns:1fr;}
+.hero2 .ph {position:relative; background:var(--img) center/cover no-repeat; min-width:0; isolation:isolate;}
+.hero2 .ph:before {content:''; position:absolute; inset:0; z-index:-1;
+  background:linear-gradient(0deg, rgba(3,4,7,.92) 0%, rgba(3,4,7,.45) 45%, rgba(3,4,7,.05) 80%),
+             linear-gradient(90deg, rgba(3,4,7,.55) 0%, transparent 60%);}
+.ph-in {position:absolute; left:28px; right:70px; bottom:20px; top:20px; display:flex; flex-direction:column; justify-content:space-between;}
+.ph-top {display:flex; flex-direction:column; gap:8px; align-items:flex-start;}
+.ph-bot {display:flex; flex-direction:column; gap:4px; min-width:0;}
+.hero2 h1 {font:900 italic 54px/.9 var(--D) !important; text-transform:uppercase; color:#fff !important; margin:2px 0 4px !important;
+  padding:0 !important; letter-spacing:-.5px; text-shadow:0 6px 30px rgba(0,0,0,.7); white-space:nowrap;}
+.hero2 h1 em {display:block; font-style:italic; color:transparent; -webkit-text-stroke:1.5px #fff;}
+.hero2 .hsub {display:flex; align-items:center; gap:10px; color:#e3e7ee; font:600 15px var(--B); white-space:nowrap;}
+.hcd {margin-top:6px; display:flex; flex-direction:column; line-height:1;}
+.hcd small {color:#c9ced8; font:700 11px var(--B); letter-spacing:2px; text-transform:uppercase;}
+.hcd b {font:900 italic 34px/1.05 var(--D); color:#fff; text-transform:uppercase; white-space:nowrap;}
+.hcd b span {color:var(--red2);}
+/* coupe en biais entre les deux panneaux, en vibreur */
+.hero2 .cut {position:absolute; top:-10px; bottom:-10px; left:calc(52.8% - 34px); width:26px; z-index:3; transform:skewX(-12deg);
+  background:repeating-linear-gradient(180deg, var(--red) 0 20px, #fff 20px 40px); box-shadow:0 0 30px rgba(0,0,0,.8);}
+.hero2.solo .cut {display:none;}
+.bp {position:relative; overflow:hidden; min-width:0; margin-left:-60px; padding-left:60px;
+  background:radial-gradient(120% 90% at 60% 50%, #13233f 0%, #0a1426 55%, #060b16 100%);}
+.bp-grid {position:absolute; inset:0;
+  background:linear-gradient(rgba(140,180,255,.07) 1px, transparent 1px) 0 0/20px 20px,
+             linear-gradient(90deg, rgba(140,180,255,.07) 1px, transparent 1px) 0 0/20px 20px,
+             linear-gradient(rgba(140,180,255,.12) 1px, transparent 1px) 0 0/100px 100px,
+             linear-gradient(90deg, rgba(140,180,255,.12) 1px, transparent 1px) 0 0/100px 100px;}
+.bp-scan {position:absolute; top:0; bottom:0; width:120px; left:-140px;
+  background:linear-gradient(90deg, transparent, rgba(225,6,0,.16), transparent); animation:scan 7s linear infinite;}
+@keyframes scan {0% {left:-140px;} 60%, 100% {left:110%;}}
+.bp-t {position:absolute; left:calc(50% + 30px); top:52%; transform:translate(-50%, -50%); height:150%; max-width:96%; object-fit:contain;
+  filter:drop-shadow(0 0 1px #fff) drop-shadow(0 0 12px rgba(120,170,255,.35)); z-index:1;}
+.bp-h {position:absolute; top:14px; left:0; right:0; padding-left:72px; text-align:center; z-index:2; white-space:nowrap; overflow:hidden;
+  text-overflow:ellipsis;}
+.bp-h span {display:block; color:var(--red2); font:700 10px var(--B); letter-spacing:3px; text-transform:uppercase;}
+.bp-h b {color:#dbe6ff; font:700 13px var(--B); letter-spacing:1px; text-transform:uppercase;}
+.bp-s {position:absolute; z-index:2; padding:6px 10px; min-width:0; white-space:nowrap;}
+.bp-s:before {content:''; position:absolute; width:14px; height:14px; border-color:rgba(219,230,255,.6); border-style:solid;}
+.bp-s span {display:block; color:#8fa6cf; font:700 10px var(--B); letter-spacing:2px; text-transform:uppercase;}
+.bp-s b {font:900 italic 30px/1 var(--D); color:#fff;}
+.bp-s b small {font:600 13px var(--B); color:#9fb3d8; font-style:normal; margin-left:2px;}
+.bp-s.tl {top:54px; left:76px;} .bp-s.tl:before {left:0; top:0; border-width:2px 0 0 2px;}
+.bp-s.tr {top:54px; right:18px; text-align:right;} .bp-s.tr:before {right:0; top:0; border-width:2px 2px 0 0;}
+.bp-s.bl {bottom:40px; left:76px;} .bp-s.bl:before {left:0; bottom:0; border-width:0 0 2px 2px;}
+.bp-s.br {bottom:40px; right:18px; text-align:right;} .bp-s.br:before {right:0; bottom:0; border-width:0 2px 2px 0;}
+.bp-f {position:absolute; bottom:12px; left:0; right:0; padding-left:72px; text-align:center; z-index:2; color:#9fb3d8; font:500 12px var(--B);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+.bp-f b {color:#fff; font-weight:700;}
 /* ---------- barre d'outils (tout dévoiler) ---------- */
 .st-key-tools {margin:6px 0 0;}
 .st-key-tools label p {font-weight:600;}
@@ -1800,6 +1851,15 @@ a.nw:hover {transform:translateY(-3px);}
   .hstats b {font-size:19px;} .hstats b small {display:none;} .hstats div {padding:10px;}
   .hstats span {font-size:9px; letter-spacing:.6px; overflow:hidden; text-overflow:ellipsis; display:block;}
   .brand .sl {display:none;}
+  .hero2 {grid-template-columns:1fr; height:auto;}
+  .hero2 .ph {height:auto;}
+  .ph-in {position:relative; left:auto; right:auto; top:auto; bottom:auto; padding:16px 18px 18px; min-height:290px; gap:28px;}
+  .hero2 h1 {font-size:40px;} .hcd b {font-size:26px;}
+  .hero2 .cut {left:0; right:0; top:auto; bottom:auto; width:auto; height:8px; transform:none; position:relative;
+    background:repeating-linear-gradient(90deg, var(--red) 0 20px, #fff 20px 40px);}
+  .bp {height:250px; margin-left:0; padding-left:0;}
+  .bp-t {left:50%; height:130%;} .bp-h, .bp-f {padding-left:0;}
+  .bp-s.tl, .bp-s.bl {left:10px;} .bp-s.tr, .bp-s.br {right:10px;} .bp-s b {font-size:22px;}
   .bf-grid {grid-template-columns:1fr;}
   .top5 {grid-template-columns:none; grid-auto-flow:column; grid-auto-columns:46%; overflow-x:auto; scrollbar-width:none;}
   .t5 {height:280px;} .t5 img {height:180px;} .t5:before {font-size:110px;}
@@ -1898,48 +1958,78 @@ def timeline(ev, sess, res, zone, fav, show_idx, stakes, cat="MotoGP", pays="FR"
     return f"<div class='tl' style='grid-template-columns:repeat({max(1, min(n, 3))}, 1fr)'>{''.join(cols)}</div>" if cols else ""
 
 
+def lap_record(ev, sess):
+    """Record du tour du circuit (établi AVANT ce GP : un record battu ce week-end serait un spoil)."""
+    for x in sess:
+        if not session_done(x):
+            continue
+        for r in records(x):
+            if r.get("type") == "bestLap" and r.get("year") and int(r["year"]) < ev["start"].year:
+                t = ((r.get("bestLap") or {}).get("time") or "").lstrip("0")
+                t = re.sub(r"^(\d+):", r"\1'", t)
+                return t, ((r.get("rider") or {}).get("full_name") or ""), r["year"]
+        break
+    return None
+
+
 def gp_hero(ev, sess, zone, nev=None, total=22):
-    """Grand en-tête : photo du GP, nom en grand, drapeau, tracé du circuit, chiffres du circuit, compte à rebours."""
+    """Bannière du GP en deux panneaux coupés en biais : à gauche la photo (nom, dates, compte à rebours),
+    à droite la fiche du circuit façon plan d'ingénieur (tracé en grand, chiffres annotés dans les coins)."""
     m = event_meta(ev)
     state = ev_state(ev, sess)
     pill = {"pre": "<span class='pill pre'>À venir</span>", "live": "<span class='pill live'>● Week-end en cours</span>",
             "post": "<span class='pill post'>✓ Terminé</span>"}[state]
-    nxt = next((s for s in sess if not session_done(s) and s["utc"] and s["utc"] > now_utc() - timedelta(minutes=50)), None)
+    nxt = next((x for x in sess if not session_done(x) and x["utc"] and x["utc"] > now_utc() - timedelta(minutes=50)), None)
     cd = ""
     if nxt and state != "post":
         if session_live(nxt):
-            cd = f"<span class='hcd'><span>●</span> {esc(nxt['label'])} en cours</span>"
+            cd = f"<div class='hcd'><small>En piste</small><b><span>●</span> {esc(nxt['label'])}</b></div>"
         else:
-            cd = f"<span class='hcd'>{esc(nxt['label'])} <span>{countdown(nxt['utc'])}</span></span>"
+            cd = (f"<div class='hcd'><small>{esc(nxt['label'])} · {esc(when_txt(nxt['utc'], zone))}</small>"
+                  f"<b>{esc(countdown(nxt['utc']))}</b></div>")
+    elif state == "pre" and sess:
+        cd = f"<div class='hcd'><small>Premier tour de roue</small><b>{esc(countdown(sess[0]['utc']))}</b></div>"
     name = gp_full(ev)
     parts = name.split(" ", 2)
     title = f"{esc(' '.join(parts[:2]))}<em>{esc(parts[2] if len(parts) > 2 else '')}</em>"
     flag_img = f"<img src='{esc(m['flag'])}' alt=''>" if m.get("flag") else flag(ev["iso"])
     city = m.get("city") or ev["place"]
-    trk = f"<img class='trk' src='{esc(m['track'])}' alt='Tracé du circuit'>" if m.get("track") else ""
+    bg = m.get("bg") or m.get("top") or ""
+
+    # Fiche du circuit (plan)
     laps = (m.get("laps") or {}).get("MGP") or {}
-    stats = []
+    def cell(pos, label, value, unit=""):
+        u = f"<small>{unit}</small>" if unit else ""
+        return f"<div class='bp-s {pos}'><span>{esc(label)}</span><b>{value}{u}</b></div>"
+    cells = []
     if m.get("km"):
-        stats.append((f"{fr_num(m['km'], 2)}<small> km</small>", "Longueur"))
+        cells.append(cell("tl", "Longueur", fr_num(float(m["km"]), 2), " km"))
     if m.get("left") is not None and m.get("right") is not None:
         lc, rc = int(float(m["left"])), int(float(m["right"]))
-        stats.append((f"{lc + rc}<small> · {lc} G / {rc} D</small>", "Virages"))
+        cells.append(cell("tr", "Virages", str(lc + rc), f" {lc} G · {rc} D"))
     if m.get("straight"):
-        stats.append((f"{int(float(m['straight'])):,}".replace(",", " ") + "<small> m</small>", "Plus longue ligne droite"))
+        cells.append(cell("bl", "Ligne droite", f"{int(float(m['straight'])):,}".replace(",", " "), " m"))
     if laps.get("laps"):
-        stats.append((f"{laps['laps']}<small>{' · sprint ' + str(laps['sprint']) if laps.get('sprint') else ''}</small>", "Tours"))
+        cells.append(cell("br", "Tours", str(laps["laps"]), f" sprint {laps['sprint']}" if laps.get("sprint") else ""))
+    foot = []
     if laps.get("km"):
-        stats.append((f"{fr_num(laps['km'], 1)}<small> km</small>", "Distance de course"))
+        foot.append(f"Course <b>{fr_num(float(laps['km']), 1)} km</b>")
+    rec = lap_record(ev, sess)
+    if rec:
+        foot.append(f"Record <b>{esc(rec[0])}</b> · {esc(rec[1])} ({esc(rec[2])})")
     elif m.get("built"):
-        stats.append((str(m["built"]), "Construit en"))
-    hs = "".join(f"<div><b>{v}</b><span>{esc(l)}</span></div>" for v, l in stats[:5])
-    hs = f"<div class='hstats' style='grid-template-columns:repeat({len(stats[:5])}, 1fr)'>{hs}</div>" if hs else ""
-    bg = m.get("bg") or m.get("top") or ""
-    return (f"<div class='hero'><div class='hero-bg' style=\"--img:url('{esc(bg)}')\"></div><div class='hero-in'><div class='hero-l'>"
-            f"<div class='rnd'>Manche <b>{ev['round']}</b><i>/ {total}</i></div>"
-            f"<div class='ctry'>{flag_img} {esc(city)} · {esc(m.get('country') or '')}</div><div class='ttl'><h1>{title}</h1>{trk}</div>"
-            f"<div class='hsub'>{esc(ev['circuit'])} · {esc(fr_range(ev['start'], ev['end']))}</div>"
-            f"<div class='hstate'>{pill}{cd}</div></div></div>{hs}<div class='kerb'></div></div>")
+        foot.append(f"Construit en <b>{esc(m['built'])}</b>")
+    trk = f"<img class='bp-t' src='{esc(m['track'])}' alt='Tracé du circuit'>" if m.get("track") else ""
+    bp = (f"<div class='bp'><div class='bp-grid'></div><div class='bp-scan'></div>"
+          f"<div class='bp-h'><span>Fiche circuit</span><b>{esc(ev['circuit'])}</b></div>{trk}{''.join(cells)}"
+          f"<div class='bp-f'>{' · '.join(foot)}</div></div>") if trk else ""
+
+    return (f"<div class='hero2{'' if bp else ' solo'}'><div class='ph' style=\"--img:url('{esc(bg)}')\"><div class='ph-in'>"
+            f"<div class='ph-top'><div class='rnd'>Manche <b>{ev['round']}</b><i>/ {total}</i></div>"
+            f"<div class='ctry'>{flag_img} {esc(city)} · {esc(m.get('country') or '')}</div></div>"
+            f"<div class='ph-bot'><h1>{title}</h1><div class='hsub'>{esc(fr_range(ev['start'], ev['end']))} {pill}</div>{cd}</div></div></div>"
+            f"<div class='cut'></div>{bp}</div>")
+
 
 
 def replay_buttons(ev, s, cat, pays):

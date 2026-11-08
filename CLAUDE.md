@@ -74,3 +74,10 @@ Mêmes règles d'affichage que la NBA : infos courtes sur une ligne (`nowrap` + 
 Robot GitHub `.github/workflows/reveil-site.yml` (copie de celui du site NBA) : toutes les heures, Playwright ouvre
 `https://badabingmotogp.streamlit.app/?robot=1` et clique « Yes, get this app back up » si le site dort. Échoue (rouge) si la page
 ouverte n'est pas le site (adresse à corriger dans `SITE_URL`). Lancement à la main : onglet Actions → « Réveil du site » → Run workflow.
+
+## v-m007 : bannière du GP refaite (carte blanche de Kiki)
+`gp_hero` = deux panneaux (`.hero2`) coupés en biais par un vibreur (`.cut`) : à gauche la photo du GP, vive (fondu seulement
+en bas), manche + pays en haut, nom + dates + compte à rebours en bas ; à droite la FICHE CIRCUIT façon plan d'ingénieur (`.bp`,
+fond bleu nuit quadrillé, balayage rouge animé) : tracé en grand au centre, 4 chiffres dans les coins avec équerres (longueur,
+virages G/D, ligne droite, tours + sprint), pied : distance de course + record du tour (`lap_record`, seulement s'il date d'avant
+ce GP : sinon spoil). Plus de bande de chiffres en dessous. Téléphone : photo puis fiche, l'une sous l'autre.
