@@ -69,3 +69,8 @@ Mêmes règles d'affichage que la NBA : infos courtes sur une ligne (`nowrap` + 
 - Roue des réglages : icône discrète au bout des onglets (`st.popover` dans `tabs`), plus en haut à droite.
 - Un résultat dévoilé RESTE dévoilé (plus de « 🙈 Cacher ») ; seul « Tout dévoiler » se désactive.
 - Pilotes hors de la liste des équipes (remplaçants, wild-cards : Aleix Espargaró) : `rider_extra` lit leur fiche (photo, couleurs).
+
+## Réveil du site
+Robot GitHub `.github/workflows/reveil-site.yml` (copie de celui du site NBA) : toutes les heures, Playwright ouvre
+`https://badabingmotogp.streamlit.app/?robot=1` et clique « Yes, get this app back up » si le site dort. Échoue (rouge) si la page
+ouverte n'est pas le site (adresse à corriger dans `SITE_URL`). Lancement à la main : onglet Actions → « Réveil du site » → Run workflow.
