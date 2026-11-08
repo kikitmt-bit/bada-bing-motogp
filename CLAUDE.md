@@ -11,7 +11,8 @@ Réponses à l'utilisateur en français. Incrémenter `APP_VERSION` à chaque ch
 - L'API publie parfois des horaires bouche-trou hors des dates du GP : `sessions` les recale sur le week-end (« prov. »).
 - Séances et classements finis gardés dans `.cache/` (ne bougent plus).
 - `events?seasonYear=` (`events_meta`, `event_meta`) : photo du GP (`bg`, `top`), drapeau, tracé blanc (`track`), longueur,
-  virages, ligne droite, tours, et HORAIRES OFFICIELS (`times`, utilisés par `sessions` pour les séances à venir).
+  virages, ligne droite, tours, et HORAIRES OFFICIELS (`times`, utilisés par `sessions` pour TOUTES les séances : l'API `results/sessions` donne l'heure
+  LOCALE du circuit marquée +00:00, fausse de 3 h au Qatar, 8 h en Malaisie ; ça décalait le bouclier anti-spoil des actus).
 - Actus : RSS Motorsport.com France + Paddock GP (filtré MotoGP).
 - **Replays (`replays_html`, `find_video`) : CANAL+ Sport d'abord** (chaîne UC8ggH3zU61XO0nMskSQwZdA, titres « Le résumé de la
   course sprint du Grand Prix du Qatar 2026 - MotoGP » / « Le résumé du Grand Prix … - Moto2 »), vidéo officielle MotoGP en second

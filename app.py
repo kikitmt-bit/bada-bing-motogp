@@ -27,7 +27,7 @@ try:
 except Exception:  # pragma: no cover
     components = None
 
-APP_VERSION = "2026-11-m021"
+APP_VERSION = "2026-11-m022"
 HERE = os.path.dirname(os.path.abspath(__file__))
 CACHE_DIR = os.path.join(HERE, ".cache")
 log = logging.getLogger("motogp")
@@ -286,7 +286,7 @@ def sessions(ev, cat_id):
     times = (event_meta(ev).get("times") or {}).get(ACRONYM.get(CAT_OF.get(cat_id, ""), ""), {})
     if times:
         for s in out:
-            if not session_done(s) and times.get(s["code"]):
+            if times.get(s["code"]):  # aussi pour les séances finies : l'API des résultats donne l'heure LOCALE marquée UTC
                 s["utc"] = times[s["code"]]
         out.sort(key=lambda s: s["utc"])
     if out and not any(session_done(s) for s in out):
@@ -823,6 +823,8 @@ def spoil_since(results, seen, show_all):
             if s["group"] and s["utc"] and s["utc"] <= now_utc() and seen_key(ev, s["group"]) not in seen:
                 if first is None or s["utc"] < first[0]:
                     first = (s["utc"], ev, s)
+    if first:  # marge : les articles « en direct » sont publiés avant la séance puis mis à jour avec le résultat
+        first = (first[0] - timedelta(hours=3),) + tuple(first[1:])
     return first
 
 
@@ -2576,7 +2578,7 @@ def gp_page(ctx):
                                  for ico, title, tease, content, cls in cards)
             parts.append(sec_title("Ce qu'il faut savoir", "MotoGP · caché tant que tu ne cliques pas") + f"<div class='bf-grid know'>{html_cards}</div>")
     if current:
-        items = news(bucket(600))[:40]
+        items = news(bucket(600))
         if items:
             parts.append(sec_title("Les actus", "", link("vue=actus", "Toutes les actus ›")) + news_html(items, ctx, limit=4))
     nev = next((e for e in evs if e["start"] > max(now_utc().date(), ev["end"])), None)
@@ -2919,7 +2921,7 @@ def news_page(ctx):
         st.markdown("<p class='note'>Aucune actu pour le moment.</p>", unsafe_allow_html=True)
         return
     allcls = " all" if ctx["show_all"] else ""
-    st.markdown(f"<div class='{allcls}'>{news_html(items[:40], ctx)}</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='{allcls}'>{news_html(items, ctx, limit=30)}</div>", unsafe_allow_html=True)
 
 
 # =========================================================================
