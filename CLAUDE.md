@@ -87,3 +87,7 @@ ce GP : sinon spoil). Plus de bande de chiffres en dessous. Téléphone : photo 
 - Plus de bandeau de bienvenue (il revenait sans cesse sur Streamlit Cloud).
 - Classement : top 3 en podium (2 · 1 · 3, le 1er plus haut). Classe « pd » des 3 derniers GP renommée `pod` (conflit avec le podium).
 - Téléphone : onglets sur 2 lignes (3 par ligne) ; tableau du classement réduit à # · pilote · pts · 3 derniers GP (`.hm` masqué).
+
+## v-m009
+- Tuiles : exactement 3 pilotes visibles (`.mini .ml` max-height 102 px = 3 lignes de 30 px), le reste en faisant défiler (arrêt net par ligne).
+- Bannière (PC) : le plan déborde de 140 px sur la photo avec un fondu (`mask-image`), plus de trait rouge. Téléphone : inchangé (trait rouge horizontal).

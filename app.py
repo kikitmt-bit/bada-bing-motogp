@@ -27,7 +27,7 @@ try:
 except Exception:  # pragma: no cover
     components = None
 
-APP_VERSION = "2026-11-m008"
+APP_VERSION = "2026-11-m009"
 HERE = os.path.dirname(os.path.abspath(__file__))
 CACHE_DIR = os.path.join(HERE, ".cache")
 log = logging.getLogger("motogp")
@@ -1488,7 +1488,7 @@ div[data-testid="stElementContainer"]:has(> iframe[data-testid="stIFrame"]), div
 .hero2 .ph:before {content:''; position:absolute; inset:0; z-index:-1;
   background:linear-gradient(0deg, rgba(3,4,7,.92) 0%, rgba(3,4,7,.45) 45%, rgba(3,4,7,.05) 80%),
              linear-gradient(90deg, rgba(3,4,7,.55) 0%, transparent 60%);}
-.ph-in {position:absolute; left:28px; right:70px; bottom:20px; top:20px; display:flex; flex-direction:column; justify-content:space-between;}
+.ph-in {position:absolute; left:28px; right:110px; bottom:20px; top:20px; display:flex; flex-direction:column; justify-content:space-between;}
 .ph-top {display:flex; flex-direction:column; gap:8px; align-items:flex-start;}
 .ph-bot {display:flex; flex-direction:column; gap:4px; min-width:0;}
 .hero2 h1 {font:900 italic 54px/.9 var(--D) !important; text-transform:uppercase; color:#fff !important; margin:2px 0 4px !important;
@@ -1499,16 +1499,17 @@ div[data-testid="stElementContainer"]:has(> iframe[data-testid="stIFrame"]), div
 .hcd small {color:#c9ced8; font:700 11px var(--B); letter-spacing:2px; text-transform:uppercase;}
 .hcd b {font:900 italic 34px/1.05 var(--D); color:#fff; text-transform:uppercase; white-space:nowrap;}
 .hcd b span {color:var(--red2);}
-.bp {position:relative; overflow:hidden; min-width:0; border-left:3px solid var(--red);
+.bp {position:relative; overflow:hidden; min-width:0; margin-left:-140px; padding-left:140px;
+  -webkit-mask-image:linear-gradient(90deg, transparent 0, #000 140px); mask-image:linear-gradient(90deg, transparent 0, #000 140px);
   background:radial-gradient(110% 90% at 50% 50%, #20242c 0%, #14171d 55%, #0b0d11 100%);}
 .bp-grid {position:absolute; inset:0;
   background:linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px) 0 0/20px 20px,
              linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px) 0 0/20px 20px,
              linear-gradient(rgba(255,255,255,.07) 1px, transparent 1px) 0 0/100px 100px,
              linear-gradient(90deg, rgba(255,255,255,.07) 1px, transparent 1px) 0 0/100px 100px;}
-.bp-t {position:absolute; left:50%; top:52%; transform:translate(-50%, -50%); height:150%; max-width:96%; object-fit:contain;
+.bp-t {position:absolute; left:calc(50% + 70px); top:52%; transform:translate(-50%, -50%); height:150%; max-width:96%; object-fit:contain;
   filter:drop-shadow(0 4px 14px rgba(0,0,0,.6)); z-index:1;}
-.bp-h {position:absolute; top:14px; left:0; right:0; text-align:center; z-index:2; white-space:nowrap; overflow:hidden;
+.bp-h {position:absolute; top:14px; left:140px; right:0; text-align:center; z-index:2; white-space:nowrap; overflow:hidden;
   text-overflow:ellipsis;}
 .bp-h span {display:block; color:var(--red2); font:700 10px var(--B); letter-spacing:3px; text-transform:uppercase;}
 .bp-h b {color:#e6e9ee; font:700 13px var(--B); letter-spacing:1px; text-transform:uppercase;}
@@ -1517,11 +1518,11 @@ div[data-testid="stElementContainer"]:has(> iframe[data-testid="stIFrame"]), div
 .bp-s span {display:block; color:#8d95a5; font:700 10px var(--B); letter-spacing:2px; text-transform:uppercase;}
 .bp-s b {font:900 italic 30px/1 var(--D); color:#fff;}
 .bp-s b small {font:600 13px var(--B); color:#9aa1ad; font-style:normal; margin-left:2px;}
-.bp-s.tl {top:54px; left:18px;} .bp-s.tl:before {left:0; top:0; border-width:2px 0 0 2px;}
+.bp-s.tl {top:54px; left:158px;} .bp-s.tl:before {left:0; top:0; border-width:2px 0 0 2px;}
 .bp-s.tr {top:54px; right:18px; text-align:right;} .bp-s.tr:before {right:0; top:0; border-width:2px 2px 0 0;}
-.bp-s.bl {bottom:40px; left:18px;} .bp-s.bl:before {left:0; bottom:0; border-width:0 0 2px 2px;}
+.bp-s.bl {bottom:40px; left:158px;} .bp-s.bl:before {left:0; bottom:0; border-width:0 0 2px 2px;}
 .bp-s.br {bottom:40px; right:18px; text-align:right;} .bp-s.br:before {right:0; bottom:0; border-width:0 2px 2px 0;}
-.bp-f {position:absolute; bottom:12px; left:0; right:0; text-align:center; z-index:2; color:#9aa1ad; font:500 12px var(--B);
+.bp-f {position:absolute; bottom:12px; left:140px; right:0; text-align:center; z-index:2; color:#9aa1ad; font:500 12px var(--B);
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
 .bp-f b {color:#fff; font-weight:700;}
 /* ---------- barre d'outils (tout dévoiler) ---------- */
@@ -1607,10 +1608,12 @@ div[data-testid="stElementContainer"]:has(> iframe[data-testid="stIFrame"]), div
 @keyframes rise {from {opacity:0; transform:translateY(4px);} to {opacity:1; transform:none;}}
 /* ---------- résultats ---------- */
 .mini {position:relative; padding-top:18px;}
-.mini .ml {display:flex; flex-direction:column; gap:6px; max-height:122px; overflow-y:auto; overscroll-behavior:contain;
+.mini .ml {display:flex; flex-direction:column; gap:6px; max-height:102px; overflow-y:auto; overscroll-behavior:contain;
+  scroll-snap-type:y mandatory;
   padding-right:4px; scrollbar-width:thin; scrollbar-color:rgba(225,6,0,.6) transparent;}
 .mini .more {color:var(--mu); font-size:11px; text-align:center; margin-top:4px; text-transform:uppercase; letter-spacing:1px;}
-.mini .l {display:flex; align-items:center; gap:9px; font-size:14px; white-space:nowrap; min-width:0; flex:none; min-height:30px;}
+.mini .l {display:flex; align-items:center; gap:9px; font-size:14px; white-space:nowrap; min-width:0; flex:none; height:30px;
+  scroll-snap-align:start;}
 .mini .l .pt {width:22px; text-align:right; font:800 14px var(--D); color:#fff;}
 .mini .l.out {opacity:.6;}
 .mini .l .p {font:900 italic 20px var(--D); width:20px; text-align:center;}
@@ -1850,9 +1853,10 @@ a.nw:hover {transform:translateY(-3px);}
   .hero2 .ph {height:auto;}
   .ph-in {position:relative; left:auto; right:auto; top:auto; bottom:auto; padding:16px 18px 18px; min-height:290px; gap:28px;}
   .hero2 h1 {font-size:40px;} .hcd b {font-size:26px;}
-  .bp {height:250px; border-left:none; border-top:3px solid var(--red);}
-  .bp-t {left:50%; height:130%;} .bp-h, .bp-f {padding-left:0;}
-  .bp-s.tl, .bp-s.bl {left:10px;} .bp-s.tr, .bp-s.br {right:10px;} .bp-s b {font-size:22px;}
+  .bp {height:250px; margin-left:0; padding-left:0; -webkit-mask-image:none; mask-image:none; border-top:3px solid var(--red);}
+  .bp-h, .bp-f {left:0 !important;}
+  .bp-t {left:50% !important; height:130%;} .bp-h, .bp-f {padding-left:0;}
+  .bp-s.tl, .bp-s.bl {left:10px !important;} .bp-s.tr, .bp-s.br {right:10px;} .bp-s b {font-size:22px;}
   .bf-grid {grid-template-columns:1fr;}
   .top5.pod3 {gap:6px;} .pod3 .t5 {height:210px;} .pod3 .t5.r1 {height:250px;}
   .pod3 .t5 img {height:130px; bottom:78px;} .pod3 .t5.r1 img {height:165px;} .t5:before {font-size:70px;}
