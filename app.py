@@ -27,7 +27,7 @@ try:
 except Exception:  # pragma: no cover
     components = None
 
-APP_VERSION = "2026-11-m019"
+APP_VERSION = "2026-11-m020"
 HERE = os.path.dirname(os.path.abspath(__file__))
 CACHE_DIR = os.path.join(HERE, ".cache")
 log = logging.getLogger("motogp")
@@ -1988,8 +1988,8 @@ a.nw:hover {transform:translateY(-3px);}
 }
 @media (max-width: 700px) {
   /* --- barre d'onglets fixée en bas, comme une application --- */
-  .block-container {padding-bottom:70px !important; padding-top:calc(var(--tabtop, 56px) + 70px) !important;}
-  .st-key-tabs {position:fixed !important; top:var(--tabtop, 56px) !important; bottom:auto !important; left:0 !important; right:0 !important;
+  .block-container {padding-bottom:70px !important; padding-top:calc(var(--tabtop, 66px) + 70px) !important;}
+  .st-key-tabs {position:fixed !important; top:var(--tabtop, 66px) !important; bottom:auto !important; left:0 !important; right:0 !important;
     z-index:999; margin:0 !important; padding:4px 4px !important; border-bottom:1px solid var(--line) !important;
     box-shadow:0 -160px 0 160px #06070a; background:#06070a !important; backdrop-filter:none !important;
     background:rgba(6,7,10,.97) !important; border-bottom:1px solid var(--line) !important;}
@@ -2997,7 +2997,7 @@ def main():
             st.session_state.bar_top = max(0, min(160, int(st.query_params.get("barre"))))
     except ValueError:
         pass
-    st.markdown(f"<style>:root {{--tabtop:{st.session_state.get('bar_top', 56)}px;}}</style>", unsafe_allow_html=True)
+    st.markdown(f"<style>:root {{--tabtop:{st.session_state.get('bar_top', 66)}px;}}</style>", unsafe_allow_html=True)
     ss = st.session_state
     _UID[0] = 0
 
