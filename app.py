@@ -27,7 +27,7 @@ try:
 except Exception:  # pragma: no cover
     components = None
 
-APP_VERSION = "2026-11-m001"
+APP_VERSION = "2026-11-m003"
 HERE = os.path.dirname(os.path.abspath(__file__))
 CACHE_DIR = os.path.join(HERE, ".cache")
 log = logging.getLogger("motogp")
@@ -253,7 +253,7 @@ def events(season_id, _bucket=None):
 
 
 WEATHER_FR = {"clear": "Soleil", "sunny": "Soleil", "cloudy": "Nuageux", "partly cloudy": "Éclaircies", "overcast": "Couvert",
-              "rain": "Pluie", "light rain": "Pluie fine", "heavy rain": "Forte pluie", "drizzle": "Bruine"}
+              "rain": "Pluie", "partly-cloudy": "Éclaircies", "mostly cloudy": "Nuageux", "mostly-cloudy": "Nuageux", "fog": "Brouillard", "windy": "Venteux", "light rain": "Pluie fine", "heavy rain": "Forte pluie", "drizzle": "Bruine"}
 TRACK_FR = {"dry": "piste sèche", "wet": "piste mouillée", "damp": "piste humide", "mixed": "piste mixte"}
 
 
@@ -282,6 +282,13 @@ def sessions(ev, cat_id):
         elif ev["status"] == "FINISHED" or all(s.get("status") == "FINISHED" for s in data):
             disk_put(name, data)
     out = sorted([s for s in (_session(s) for s in data) if s["utc"]], key=lambda s: s["utc"])
+    # Horaires officiels de diffusion (justes, même quand ceux des résultats sont des bouche-trous)
+    times = (event_meta(ev).get("times") or {}).get(ACRONYM.get(CAT_OF.get(cat_id, ""), ""), {})
+    if times:
+        for s in out:
+            if not session_done(s) and times.get(s["code"]):
+                s["utc"] = times[s["code"]]
+        out.sort(key=lambda s: s["utc"])
     if out and not any(session_done(s) for s in out):
         # L'API publie parfois des horaires bouche-trou hors des dates du GP : on les recale sur le week-end, marqués provisoires
         shift = (ev["start"] - out[0]["utc"].date()).days
@@ -290,6 +297,68 @@ def sessions(ev, cat_id):
                 s["utc"] = s["utc"] + timedelta(days=shift)
                 s["provisional"] = True
     return out
+
+
+ACRONYM = {"MotoGP": "MGP", "Moto2": "MT2", "Moto3": "MT3"}
+CAT_OF = {}  # id de catégorie (résultats) -> nom, rempli au démarrage
+
+
+def _photo_url(u):
+    return quote(u, safe=":/@%?=&") if u else ""
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def events_meta(year, _bucket=None):
+    """Fiche de chaque GP (API « events ») : photos, tracé et chiffres du circuit, tours, horaires officiels. {code: {...}}"""
+    data = get_json(f"{API}/events", {"seasonYear": year})
+    if data is None:
+        return disk_get(f"meta_{year}.json") or {}
+    out = {}
+    for e in data:
+        code = e.get("shortname") or ""
+        if e.get("kind") not in (None, "GP") or not code:
+            continue
+        cats = {c.get("id"): c.get("acronym") for c in e.get("categories") or []}
+        assets = {}
+        for a in e.get("assets") or []:
+            if a.get("type") == "TOP" and a.get("quality") not in ("@2x", "@1x"):
+                continue
+            if a.get("type") == "TOP" and assets.get("TOP") and a.get("quality") == "@1x":
+                continue
+            assets[a.get("type")] = _photo_url(a.get("path"))
+        circ = e.get("circuit") or {}
+        trk = circ.get("track") or {}
+        tassets = trk.get("assets") or {}
+        laps = {}
+        for c in e.get("event_categories") or []:
+            acr = cats.get(c.get("category_id"))
+            if acr:
+                laps[acr] = {"laps": c.get("num_laps"), "sprint": c.get("sprint_num_laps"),
+                             "km": ((c.get("distance") or {}).get("kiloMeters"))}
+        times = {}
+        for b in e.get("broadcasts") or []:
+            if b.get("type") != "SESSION":
+                continue
+            acr = (b.get("category") or {}).get("acronym")
+            dt = parse_dt(re.sub(r"([+-]\d\d)(\d\d)$", r"\1:\2", b.get("date_start") or ""))
+            if acr and dt:
+                times.setdefault(acr, {})[b.get("shortname")] = dt.isoformat()
+        out[code] = {"bg": assets.get("BACKGROUND", ""), "top": assets.get("TOP", ""), "flag": assets.get("FLAG", ""),
+                     "track": _photo_url((tassets.get("simple") or {}).get("path")),
+                     "km": (trk.get("lenght_units") or {}).get("kiloMeters"), "width": trk.get("width"),
+                     "straight": trk.get("longest_straight"), "left": trk.get("left_corners"), "right": trk.get("right_corners"),
+                     "built": circ.get("constructed"), "city": circ.get("city") or "", "country": circ.get("country") or "",
+                     "laps": laps, "times": times, "hashtag": e.get("hashtag") or ""}
+    if out:
+        disk_put(f"meta_{year}.json", out)
+    return out
+
+
+def event_meta(ev):
+    m = dict((events_meta(ev["start"].year, bucket(3600)) or {}).get(ev["code"]) or {})
+    if m.get("times"):
+        m["times"] = {a: {k: parse_dt(v) for k, v in t.items()} for a, t in m["times"].items()}
+    return m
 
 
 def _row(c):
@@ -672,12 +741,26 @@ def spoil_since(results, seen, show_all):
 # VIDÉOS (YouTube : chaîne officielle MotoGP)
 # =========================================================================
 YOUTUBE_FEED_URL = "https://www.youtube.com/feeds/videos.xml?channel_id={}"
+YOUTUBE_PLAYLIST_URL = "https://www.googleapis.com/youtube/v3/playlistItems"
+CANAL_CHANNEL = "UC8ggH3zU61XO0nMskSQwZdA"  # CANAL+ Sport : résumés en français (« Le résumé de la course sprint du Grand Prix du Qatar 2026 - MotoGP »)
+CANAL_HANDLE = "CANALPLUSSPORT"
+
+
+def _secret(section, key, default=""):
+    try:
+        value = st.secrets[section][key]
+        if value not in (None, ""):
+            return value
+    except Exception:
+        pass
+    return os.environ.get(f"{section}_{key}".upper()) or default
 
 
 def _walk_videos(o):
     if isinstance(o, dict):
-        if "videoRenderer" in o:
-            yield o["videoRenderer"]
+        for k in ("videoRenderer", "gridVideoRenderer"):
+            if k in o:
+                yield o[k]
         for x in o.values():
             yield from _walk_videos(x)
     elif isinstance(o, list):
@@ -685,23 +768,21 @@ def _walk_videos(o):
             yield from _walk_videos(x)
 
 
-@st.cache_data(ttl=1200, show_spinner=False, max_entries=300)
-def yt_search(query):
-    """Recherche YouTube (page publique, sans clé) : [{id, title, channel, mins}]."""
-    if _FAKE:
-        return _FAKE("yt_search", {"q": query}) or []
+def _yt_page(url, params, lang="fr"):
     try:
-        r = SESSION.get("https://www.youtube.com/results", params={"search_query": query, "hl": "en", "gl": "US"},
-                        headers={"Accept-Language": "en-US,en"}, cookies={"CONSENT": "YES+1", "SOCS": "CAI"}, timeout=12)
+        r = SESSION.get(url, params=params, headers={"Accept-Language": "fr-FR,fr" if lang == "fr" else "en-US,en"},
+                        cookies={"CONSENT": "YES+1", "SOCS": "CAI"}, timeout=12, allow_redirects=False)
+        if r.status_code != 200:
+            return []
         m = re.search(r"var ytInitialData = (\{.*?\});</script>", r.text)
         data = json.loads(m.group(1)) if m else {}
     except Exception as e:
-        log.warning("Recherche YouTube indisponible (%s)", type(e).__name__)
+        log.warning("YouTube indisponible (%s)", type(e).__name__)
         return []
     out = []
     for v in _walk_videos(data):
-        title = "".join(x.get("text", "") for x in (v.get("title") or {}).get("runs") or [])
-        owner = ((v.get("ownerText") or {}).get("runs") or [{}])[0]
+        title = "".join(x.get("text", "") for x in (v.get("title") or {}).get("runs") or []) or (v.get("title") or {}).get("simpleText", "")
+        owner = ((v.get("ownerText") or v.get("shortBylineText") or {}).get("runs") or [{}])[0]
         channel = ((owner.get("navigationEndpoint") or {}).get("browseEndpoint") or {}).get("browseId", "")
         length = (v.get("lengthText") or {}).get("simpleText", "")
         parts = [int(x) for x in length.split(":") if x.isdigit()]
@@ -711,11 +792,30 @@ def yt_search(query):
     return out
 
 
+@st.cache_data(ttl=1800, show_spinner=False, max_entries=300)
+def yt_search(query, lang="en"):
+    """Recherche YouTube (page publique, sans clé) : filet de sécurité, peu fiable (YouTube limite les robots)."""
+    if _FAKE:
+        return _FAKE("yt_search", {"q": query}) or []
+    hl = {"hl": "fr", "gl": "FR"} if lang == "fr" else {"hl": "en", "gl": "US"}
+    return _yt_page("https://www.youtube.com/results", dict(search_query=query, **hl), lang)
+
+
+@st.cache_data(ttl=1800, show_spinner=False, max_entries=100)
+def channel_search(channel, query):
+    """Recherche dans une chaîne (sans clé)."""
+    out = _yt_page(f"https://www.youtube.com/channel/{channel}/search", {"query": query, "hl": "fr", "gl": "FR"})
+    for v in out:
+        v["channel"] = v["channel"] or channel
+    return out
+
+
 @st.cache_data(ttl=900, show_spinner=False)
-def channel_feed(_bucket=None):
-    text = get_text(YOUTUBE_FEED_URL.format(MOTOGP_CHANNEL))
+def channel_feed(channel, _bucket=None):
+    """Flux public de la chaîne (15 dernières vidéos)."""
+    text = get_text(YOUTUBE_FEED_URL.format(channel))
     out = []
-    if not text:
+    if not text or "<feed" not in text:
         return out
     ns = {"a": "http://www.w3.org/2005/Atom", "yt": "http://www.youtube.com/xml/schemas/2015"}
     try:
@@ -725,7 +825,42 @@ def channel_feed(_bucket=None):
     for e in root.findall("a:entry", ns):
         vid = e.findtext("yt:videoId", default="", namespaces=ns)
         if vid:
-            out.append({"id": vid, "title": e.findtext("a:title", default="", namespaces=ns), "channel": MOTOGP_CHANNEL, "mins": None})
+            out.append({"id": vid, "title": e.findtext("a:title", default="", namespaces=ns), "channel": channel, "mins": None})
+    return out
+
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def channel_uploads(channel, since_iso, _bucket=None):
+    """Vidéos de la chaîne depuis `since_iso`, par l'API YouTube (clé [youtube] api_key) : la seule source complète,
+    qui voit aussi les vidéos réservées à la France."""
+    key = str(_secret("youtube", "api_key", ""))
+    if not key:
+        return []
+    since = parse_dt(since_iso)
+    out, token = [], None
+    for _ in range(12):
+        params = {"part": "snippet,contentDetails", "playlistId": "UU" + channel[2:], "maxResults": 50, "key": key}
+        if token:
+            params["pageToken"] = token
+        try:
+            r = SESSION.get(YOUTUBE_PLAYLIST_URL, params=params, timeout=10)
+        except Exception:
+            break
+        if r.status_code != 200:
+            log.warning("API YouTube : HTTP %s", r.status_code)
+            break
+        payload = r.json()
+        page = []
+        for item in payload.get("items") or []:
+            sn = item.get("snippet") or {}
+            vid = (sn.get("resourceId") or {}).get("videoId")
+            if vid:
+                page.append({"id": vid, "title": html.unescape(sn.get("title", "")), "channel": channel, "mins": None,
+                             "published": sn.get("publishedAt", "")})
+        out += page
+        token = payload.get("nextPageToken")
+        if not token or not page or (since and all((parse_dt(v["published"]) or since) < since for v in page[-5:])):
+            break
     return out
 
 
@@ -737,13 +872,42 @@ def found_videos():
     return disk_get("videos.json") or {}
 
 
+def remember(key, v):
+    store = found_videos()
+    with _VID_LOCK:
+        store[key] = {"id": v["id"], "mins": v.get("mins"), "title": v.get("title", "")}
+        disk_put("videos.json", dict(store))
+
+
 def _gp_words(ev):
     return GP.get(ev["code"], (None, [norm(ev["place"])]))[1]
 
 
-def _match(v, ev, kind):
+def fr_place(ev):
+    """« qatar », « malaisie », « etats-unis » (pour reconnaître les titres de Canal+)."""
+    name = norm(ev["name"])
+    return re.sub(r"^gp (du |de la |de l'|de |d'|des )?", "", name).strip()
+
+
+def gp_full(ev):
+    return ev["name"].replace("GP ", "Grand Prix ", 1)
+
+
+def _canal_match(v, ev, kind, cat):
     t = norm(v["title"])
-    if v.get("channel") != MOTOGP_CHANNEL or str(ev["start"].year) not in t:
+    if "resume" not in t or str(ev["start"].year) not in t or fr_place(ev) not in t:
+        return False
+    if any(w in t for w in ("qualif", "essais", "warm", "practice")):
+        return False
+    vcat = "moto2" if "moto2" in t or "moto 2" in t else "moto3" if "moto3" in t or "moto 3" in t else "motogp"
+    if vcat != norm(cat):
+        return False
+    return ("sprint" in t) == (kind == "sprint")
+
+
+def _official_match(v, ev, kind):
+    t = norm(v["title"])
+    if v.get("channel") not in ("", MOTOGP_CHANNEL) or str(ev["start"].year) not in t:
         return False
     if not any(w in t for w in _gp_words(ev)):
         return False
@@ -751,71 +915,54 @@ def _match(v, ev, kind):
         return "motogp highlights" in t or ("race" in t and "highlights" in t and "sprint" not in t)
     if kind == "sprint":
         return "sprint" in t and ("highlights" in t or "moments" in t)
-    if kind == "quali":
-        return "qualifying" in t and ("highlights" in t or "moments" in t or "q2" in t)
-    if kind == "best":
-        return "best motogp moments" in t or "viral moments" in t
     return False
 
 
-def gp_videos(ev, wanted):
-    """Vidéos officielles d'un GP {kind: vidéo} pour les séances finies (wanted : 'race', 'sprint', 'quali').
-    Titres jamais affichés (ils peuvent spoiler)."""
+def canal_query(ev, kind, cat):
+    what = "course sprint du " if kind == "sprint" else ""
+    return f"résumé de la {what}{gp_full(ev)} {ev['start'].year} {cat}".replace("de la Grand", "du Grand")
+
+
+def canal_search_url(ev, kind, cat):
+    """Recherche dans la chaîne Canal+ Sport, ouverte dans le navigateur du visiteur (en France, la vidéo sort en premier)."""
+    return f"https://www.youtube.com/@{CANAL_HANDLE}/search?query=" + quote(canal_query(ev, kind, cat))
+
+
+def official_search_url(ev, kind):
+    what = "Tissot Sprint" if kind == "sprint" else "MotoGP HIGHLIGHTS"
+    return "https://www.youtube.com/results?search_query=" + quote(f"{what} {ev['start'].year} {_gp_words(ev)[0]} GP")
+
+
+def find_video(ev, source, kind, cat="MotoGP"):
+    """Vidéo d'un GP. Sources, dans l'ordre : mémoire, API YouTube (clé), flux public, recherche dans la chaîne,
+    recherche YouTube. Titres jamais affichés : ils spoilent."""
+    key = f"{ev['start'].year}{ev['code']}_{source}_{kind}_{cat}"
     store = found_videos()
-    out = {}
-    missing = []
-    for k in wanted:
-        key = f"{ev['start'].year}{ev['code']}_{k}"
-        if store.get(key):
-            out[k] = store[key]
+    if store.get(key):
+        return store[key]
+    recent = (now_utc().date() - ev["end"]).days <= 12  # la recherche sans clé n'est tentée que pour les GP récents
+    channel = CANAL_CHANNEL if source == "canal" else MOTOGP_CHANNEL
+    ok = (lambda v: _canal_match(v, ev, kind, cat)) if source == "canal" else (lambda v: _official_match(v, ev, kind))
+    pools = [lambda: channel_uploads(channel, (datetime.combine(ev["start"], datetime.min.time()) - timedelta(days=1)).replace(
+                 tzinfo=timezone.utc).isoformat(), bucket(1800)),
+             lambda: channel_feed(channel, bucket(900))]
+    if recent:
+        if source == "canal":
+            pools.append(lambda: channel_search(CANAL_CHANNEL, canal_query(ev, kind, cat)))
+            pools.append(lambda: [v for v in yt_search("CANAL+ Sport " + canal_query(ev, kind, cat), "fr") if v["channel"] == CANAL_CHANNEL])
         else:
-            missing.append(k)
-    if not missing:
-        return out
-    pool = channel_feed(bucket(900))
-    word = _gp_words(ev)[0].title()
-    for k in missing:
-        cand = [v for v in pool if _match(v, ev, k)]
-        if not cand:
-            q = {"race": "MotoGP HIGHLIGHTS", "sprint": "Tissot Sprint", "quali": "Qualifying highlights", "best": "Best MotoGP Moments"}[k]
-            cand = [v for v in yt_search(f"{q} {ev['start'].year} {word} GP") if _match(v, ev, k)]
+            q = ("Tissot Sprint" if kind == "sprint" else "MotoGP HIGHLIGHTS") + f" {ev['start'].year} {_gp_words(ev)[0].title()} GP"
+            pools.append(lambda: yt_search(q))
+    for pool in pools:
+        cand = [v for v in pool() if ok(v)]
         if cand:
-            v = cand[0]
-            out[k] = v
-            with _VID_LOCK:
-                store[f"{ev['start'].year}{ev['code']}_{k}"] = {"id": v["id"], "mins": v.get("mins"), "title": v["title"]}
-                disk_put("videos.json", dict(store))
-    return out
+            remember(key, cand[0])
+            return cand[0]
+    return None
 
 
 def yt_url(v):
     return f"https://www.youtube.com/watch?v={v['id']}"
-
-
-def yt_search_url(ev, what="highlights"):
-    q = f"MotoGP {ev['start'].year} {_gp_words(ev)[0]} GP {what}"
-    return "https://www.youtube.com/results?search_query=" + quote(q)
-
-
-def video_buttons(ev, sess_list, cls="vb"):
-    """Boutons vidéo (sans titre) pour les séances finies du GP."""
-    done = {s["code"] for s in sess_list if session_done(s)}
-    wanted = [k for k, c in (("race", "RAC"), ("sprint", "SPR")) if c in done]
-    if not wanted:
-        return ""
-    vids = gp_videos(ev, wanted)
-    out = []
-    for k, label in (("race", "▶ Résumé du GP"), ("sprint", "▶ Résumé du sprint")):
-        if k not in wanted:
-            continue
-        v = vids.get(k)
-        if v:
-            mins = f" <small>{v['mins']} min</small>" if v.get("mins") else ""
-            out.append(f"<a class='{cls}' href='{yt_url(v)}' target='_blank' rel='noopener'>{label}{mins}</a>")
-        else:
-            what = "race highlights" if k == "race" else "sprint highlights"
-            out.append(f"<a class='{cls} ghost' href='{yt_search_url(ev, what)}' target='_blank' rel='noopener'>🔎 {label[2:]}</a>")
-    return "".join(out)
 
 
 # =========================================================================
@@ -835,13 +982,23 @@ def gp_link(ev, text, cls="lk"):
     return link(f"vue=gp&gp={ev['code']}", text, cls)
 
 
-def photo(info, size=44, cls="ph"):
+def head(info, size=40, cls="hd"):
+    """Tête du pilote (photo détourée) dans un rond à la couleur de l'équipe."""
+    c = esc(info.get("color") or "#333")
     if info.get("photo"):
-        return (f"<img class='{cls}' src='{esc(info['photo'])}' width='{size}' height='{size}' loading='lazy' "
-                f"style='background:{esc(info.get('color', '#333'))}' alt=''>")
-    num = esc(info.get("num") or "")
-    return (f"<span class='{cls} phn' style='width:{size}px;height:{size}px;background:{esc(info.get('color', '#333'))}'>"
-            f"{num}</span>")
+        return (f"<span class='{cls}' style='--c:{c};width:{size}px;height:{size}px'><img src='{esc(info['photo'])}' "
+                f"loading='lazy' alt=''></span>")
+    return (f"<span class='{cls} hdn' style='--c:{c};width:{size}px;height:{size}px;font-size:{size * 0.42:.0f}px'>"
+            f"{esc(info.get('num') or '')}</span>")
+
+
+def short_name(info, row=None):
+    """« M. Marquez » (Marc et Alex Márquez sont tous les deux en MotoGP)."""
+    first = info.get("first") or ""
+    last = info.get("last") or (row or {}).get("name", "").split(" ")[-1]
+    if not first and row and " " in row.get("name", ""):
+        first = row["name"].split(" ")[0]
+    return f"{first[:1]}. {last}" if first else last
 
 
 def num_badge(info):
@@ -851,13 +1008,13 @@ def num_badge(info):
             f"{esc(info['num'])}</span>")
 
 
-def rider_cell(r, with_team=True, with_link=True):
+def rider_cell(r, with_team=True, with_link=True, size=34):
     info = rider_of(r["rid"], r)
     name = esc(info.get("name") or r["name"])
     nm = rider_link(r["rid"], name) if with_link else name
     team = f"<span class='tm'>{esc(r.get('team') or info.get('team'))}</span>" if with_team else ""
-    return (f"<span class='rc'>{num_badge(info) or ''}<span class='fl'>{flag(r.get('iso') or info.get('iso'))}</span>"
-            f"<span class='rn'><b>{nm}</b>{team}</span></span>")
+    return (f"<span class='rc'>{head(info, size)}<span class='rn'><b>{flag(r.get('iso') or info.get('iso'))} {nm}</b>{team}</span>"
+            f"{num_badge(info)}</span>")
 
 
 def status_fr(r):
@@ -871,7 +1028,7 @@ def status_fr(r):
     return "—"
 
 
-def gap_txt(r, leader_time="", race=True):
+def gap_txt(r):
     if not r["pos"]:
         lap = f" (tour {r['laps']})" if r.get("laps") else ""
         return status_fr(r) + lap
@@ -880,16 +1037,16 @@ def gap_txt(r, leader_time="", race=True):
     if r.get("laps_down"):
         return f"+{r['laps_down']} tour" + ("s" if r["laps_down"] > 1 else "")
     if r["gap"] is not None:
-        return "+" + fr_num(r["gap"], 3) + " s"
+        return "+" + fr_num(r["gap"], 3)
     return esc(r.get("best") or r.get("time") or "")
 
 
-def results_table(rows, code, fav=None, limit=None):
+def results_table(rows, code, fav=None):
     race = code in ("SPR", "RAC")
-    head = "<tr><th>#</th><th>Pilote</th><th class='r'>" + ("Écart" if race else "Meilleur tour") + "</th>" + \
-           ("<th class='r'>Pts</th>" if race else "<th class='r'>Écart</th>") + "</tr>"
+    head_ = ("<tr><th>Pos.</th><th class='l'>Pilote</th><th class='r'>" + ("Écart" if race else "Meilleur tour") + "</th>"
+             + ("<th class='r'>Pts</th>" if race else "<th class='r'>Écart</th>") + "</tr>")
     body = []
-    for r in rows[:limit] if limit else rows:
+    for r in rows:
         cls = []
         if r["pos"] and r["pos"] <= 3:
             cls.append(f"p{r['pos']}")
@@ -898,30 +1055,29 @@ def results_table(rows, code, fav=None, limit=None):
         if not r["pos"]:
             cls.append("out")
         stripe = color_of(r["rid"], r)
-        pos = r["pos"] or "–"
         if race:
             right = f"<td class='r g'>{gap_txt(r)}</td><td class='r pts'>{r['points'] or ''}</td>"
         else:
             g = "" if r["pos"] == 1 or r["gap"] is None else "+" + fr_num(r["gap"], 3)
             right = f"<td class='r g'>{esc(r['best']) if r['pos'] else status_fr(r)}</td><td class='r g'>{g}</td>"
-        body.append(f"<tr class='{' '.join(cls)}'><td class='ps' style='border-left:4px solid {esc(stripe)}'>{pos}</td>"
-                    f"<td>{rider_cell(r)}</td>{right}</tr>")
-    return f"<table class='res'>{head}{''.join(body)}</table>"
+        body.append(f"<tr class='{' '.join(cls)}'><td class='ps'><span style='--c:{esc(stripe)}'>{r['pos'] or '–'}</span></td>"
+                    f"<td class='l'>{rider_cell(r)}</td>{right}</tr>")
+    return f"<table class='res'>{head_}{''.join(body)}</table>"
 
 
 def podium_html(rows):
-    top = [r for r in rows if r["pos"] in (1, 2, 3)]
-    top.sort(key=lambda r: r["pos"])
+    top = sorted([r for r in rows if r["pos"] in (1, 2, 3)], key=lambda r: r["pos"])
     if len(top) < 3:
         return ""
-    order = [top[1], top[0], top[2]]
     out = []
-    for r in order:
+    for r in (top[1], top[0], top[2]):
         info = rider_of(r["rid"], r)
         g = "" if r["pos"] == 1 else ("+" + fr_num(r["gap"], 3) + " s" if r["gap"] is not None else "")
-        out.append(f"<div class='pd pd{r['pos']}' style='--c:{esc(color_of(r['rid'], r))}'>{photo(info, 64)}"
-                   f"<div class='pdn'>{rider_link(r['rid'], esc(info.get('last') or r['name']))}</div>"
-                   f"<div class='pdt'>{esc(r['team'])}</div><div class='pdg'>{g}</div><div class='pdb'>{r['pos']}</div></div>")
+        img = f"<img src='{esc(info['photo'])}' loading='lazy' alt=''>" if info.get("photo") else f"<i>{esc(info.get('num') or '')}</i>"
+        out.append(f"<div class='pd pd{r['pos']}' style='--c:{esc(color_of(r['rid'], r))}'><div class='pdi'>{img}</div>"
+                   f"<div class='pdx'><span class='pdp'>{r['pos']}</span><div class='pdn'>{flag(r['iso'])} "
+                   f"{rider_link(r['rid'], esc(short_name(info, r)))}</div><div class='pdt'>{esc(r['team'])}</div>"
+                   f"<div class='pdg'>{g}</div></div></div>")
     return f"<div class='podium'>{''.join(out)}</div>"
 
 
@@ -933,20 +1089,21 @@ def uid(prefix="t"):
     return f"{prefix}{_UID[0]}"
 
 
-def hidden(label, content, cls="tg", open_cls=""):
+def hidden(label, content, cls="tg"):
     """Bloc caché par une case à cocher CSS (jamais `checked` dans le HTML : React la verrouillerait)."""
     i = uid("h")
-    return (f"<div class='hb {open_cls}'><input type='checkbox' id='{i}' class='{cls}'>"
-            f"<label for='{i}' class='hbl'>{label}</label><label for='{i}' class='hbc'>🙈 Cacher</label>"
+    return (f"<div class='hb'><input type='checkbox' id='{i}' class='{cls}'>"
+            f"<label for='{i}' class='hbl'><span>👁</span>{label}</label><label for='{i}' class='hbc'>🙈 Cacher</label>"
             f"<div class='hbx'>{content}</div></div>")
 
 
-def local(dt, zone):
-    return dt.astimezone(zone)
+def hm(dt, zone):
+    d = dt.astimezone(zone)
+    return f"{d.hour}h{d.minute:02d}"
 
 
 def when_txt(dt, zone, today=None):
-    d = local(dt, zone)
+    d = dt.astimezone(zone)
     today = today or now_utc().astimezone(zone).date()
     if d.date() == today:
         j = "Aujourd'hui"
@@ -957,6 +1114,24 @@ def when_txt(dt, zone, today=None):
     else:
         j = fr_day(d.date(), short=True).capitalize()
     return f"{j} {fr_hour(d)}"
+
+
+def countdown(dt):
+    secs = int((dt - now_utc()).total_seconds())
+    if secs <= 0:
+        return "maintenant"
+    d, h, m = secs // 86400, secs % 86400 // 3600, secs % 3600 // 60
+    if d >= 2:
+        return f"dans {d} jours"
+    if d == 1:
+        return f"dans 1 j {h} h"
+    return f"dans {h} h {m:02d}" if h else f"dans {m} min"
+
+
+def sec_title(title, sub="", right=""):
+    s = f"<small>{sub}</small>" if sub else ""
+    r = f"<span class='sr'>{right}</span>" if right else ""
+    return f"<div class='sec'><h2>{esc(title)}</h2>{s}{r}</div>"
 
 
 # =========================================================================
@@ -1061,9 +1236,9 @@ def apply_restore(q):
 
 
 VIEWS = ("brief", "gp", "calendrier", "classement", "pilotes", "actus")
-TABS = [("brief", "Le brief", ":material/coffee:"), ("gp", "Grand Prix", ":material/sports_motorsports:"),
-        ("calendrier", "Calendrier", ":material/calendar_month:"), ("classement", "Classement", ":material/leaderboard:"),
-        ("pilotes", "Pilotes", ":material/person:"), ("actus", "Actus", ":material/newspaper:")]
+TABS = [("brief", "Le brief", ":material/bolt:"), ("gp", "Grand Prix", ":material/sports_motorsports:"),
+        ("calendrier", "Calendrier", ":material/calendar_month:"), ("classement", "Classement", ":material/emoji_events:"),
+        ("pilotes", "Pilotes", ":material/groups:"), ("actus", "Actus", ":material/newspaper:")]
 
 
 def apply_go(cmd):
@@ -1074,7 +1249,7 @@ def apply_go(cmd):
         return
     if q.get("gp"):
         ss.gp = q["gp"]
-    if q.get("pilote") is not None and "pilote" in q:
+    if "pilote" in q:
         ss.rider = q["pilote"] or None
     if q.get("cat") in CATS:
         ss.cat = q["cat"]
@@ -1083,262 +1258,431 @@ def apply_go(cmd):
 
 
 # =========================================================================
-# STYLE
+# STYLE : carbone, rouge MotoGP, italiques serrées, vibreurs
 # =========================================================================
 CSS = """
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700;800&display=swap');
-:root {--bg:#0d0f14; --card:#161a22; --card2:#1d222c; --line:#2a303c; --tx:#eef1f6; --mu:#9aa3b2; --acc:#e10600;
-       --gold:#f5c542; --ok:#3ecf8e;}
-html, body, [data-testid="stAppViewContainer"] {background:var(--bg) !important;}
-.stApp, .stMarkdown, p, div {font-family:'Barlow', sans-serif;}
-.block-container {max-width:1240px; padding-top:1.2rem !important;}
+@import url('https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@500;600;700;800;900&family=Saira:wght@400;500;600;700&display=swap');
+:root {--bg:#06070a; --bg2:#0c0e13; --card:rgba(255,255,255,.035); --card2:rgba(255,255,255,.06); --line:rgba(255,255,255,.09);
+       --tx:#f3f5f9; --mu:#8d95a5; --red:#e10600; --red2:#ff3b30; --gold:#f3c34e; --silver:#d9dee6; --bronze:#d08a52;
+       --ok:#35d07f; --D:'Saira Condensed', sans-serif; --B:'Saira', sans-serif;}
+html, body, [data-testid="stAppViewContainer"], .stApp {background:
+  radial-gradient(1200px 500px at 85% -10%, rgba(225,6,0,.16), transparent 60%),
+  radial-gradient(900px 400px at -10% 30%, rgba(225,6,0,.06), transparent 60%),
+  repeating-linear-gradient(45deg, rgba(255,255,255,.012) 0 2px, transparent 2px 6px),
+  repeating-linear-gradient(-45deg, rgba(255,255,255,.012) 0 2px, transparent 2px 6px), var(--bg) !important;
+  background-attachment:fixed !important;}
+.stApp, .stMarkdown, .stMarkdown p, .stMarkdown div {font-family:var(--B);}
+.block-container {max-width:1280px; padding-top:1rem !important; padding-bottom:2rem !important;}
 header[data-testid="stHeader"] {height:0; background:transparent;}
 div[data-testid="stElementContainer"]:has(> iframe[data-testid="stIFrame"]), div:has(> .st-key-gobox) {
   position:absolute !important; width:1px; height:1px; overflow:hidden; left:-9999px;}
 .st-key-gobox {position:absolute !important; left:-9999px; top:0; width:1px; height:1px; overflow:hidden;}
-a {color:var(--tx);}
-.stMarkdown a.lk, .stMarkdown a.rl, .stMarkdown a.vb, .stMarkdown a.c, .stMarkdown a.rt, .stMarkdown a.nw {text-decoration:none !important;}
-.stMarkdown a.rl, .stMarkdown a.c, .stMarkdown a.rt, .stMarkdown a.nw {color:inherit !important;}
-.stMarkdown a.lk {color:var(--gold) !important;}
+.stMarkdown a {text-decoration:none !important;}
+.stMarkdown a.rl, .stMarkdown a.cc, .stMarkdown a.rt, .stMarkdown a.nw, .stMarkdown a.rp, .stMarkdown a.nx {color:inherit !important;}
+.stMarkdown a.lk {color:var(--red2) !important; font-weight:600;}
 .stMarkdown a.rl:hover, .stMarkdown a.lk:hover {text-decoration:underline !important;}
-.brand {font-family:'Barlow Condensed'; font-weight:800; font-size:30px; letter-spacing:.5px; line-height:1; white-space:nowrap;}
-.brand i {color:var(--acc); font-style:normal;}
+/* ---------- en-tête du site ---------- */
 .st-key-hdr [data-testid="stHorizontalBlock"] {flex-wrap:nowrap !important; align-items:center;}
-.st-key-hdr [data-testid="stColumn"]:last-child {flex:0 0 64px !important; min-width:64px !important;}
-.st-key-tabs {position:sticky; top:0; z-index:50; background:var(--bg); padding:6px 0 4px; border-bottom:1px solid var(--line);}
-.st-key-tabs button {white-space:nowrap;}
-.pg-h {margin:14px 0 8px;}
-.pg-h .k {color:var(--acc); font:700 13px 'Barlow Condensed'; letter-spacing:2px; text-transform:uppercase;}
-.pg-h h2 {font:800 30px/1.1 'Barlow Condensed'; margin:2px 0; padding:0; color:var(--tx);}
-.pg-h p {color:var(--mu); margin:2px 0 0;}
+.st-key-hdr [data-testid="stColumn"]:last-child {flex:0 0 58px !important; min-width:58px !important;}
+.st-key-hdr [data-testid="stColumn"]:first-child {flex:1 1 auto !important; min-width:0 !important; width:auto !important;}
+.brand {display:flex; align-items:center; gap:10px; white-space:nowrap;}
+.brand .lg {font:900 italic 30px/1 var(--D); letter-spacing:.5px; color:#fff; text-transform:uppercase;}
+.brand .lg i {color:var(--red); font-style:italic;}
+.brand .sl {width:46px; height:22px; transform:skewX(-20deg);
+  background:repeating-linear-gradient(90deg, var(--red) 0 6px, transparent 6px 10px);}
+.brand small {color:var(--mu); font:600 12px var(--B); letter-spacing:3px; text-transform:uppercase; margin-left:4px;}
+.st-key-tabs {position:sticky; top:0; z-index:50; padding:6px 0; margin-bottom:6px;
+  background:linear-gradient(180deg, rgba(6,7,10,.97), rgba(6,7,10,.9)); backdrop-filter:blur(8px); border-bottom:1px solid var(--line);}
+.st-key-tabs button {white-space:nowrap; font-family:var(--D) !important; letter-spacing:.5px; border-radius:6px !important;
+  transform:skewX(-10deg);}
+.st-key-tabs button p {font:700 16px var(--D) !important; text-transform:uppercase; letter-spacing:.8px;}
+.st-key-tabs button[kind="primary"], .st-key-tabs button[data-testid="stBaseButton-primary"] {background:var(--red) !important;
+  border-color:var(--red) !important; box-shadow:0 6px 24px rgba(225,6,0,.35);}
+/* ---------- titres de section ---------- */
+.sec {display:flex; align-items:baseline; gap:12px; margin:26px 0 12px; position:relative; padding-left:20px; flex-wrap:wrap;}
+.sec:before {content:''; position:absolute; left:0; top:4px; bottom:4px; width:8px; background:var(--red); transform:skewX(-20deg);}
+.sec h2 {font:900 italic 28px/1 var(--D) !important; text-transform:uppercase; letter-spacing:.5px; margin:0 !important;
+  padding:0 !important; color:#fff !important;}
+.sec small {color:var(--mu); font-size:13px;}
+.sec .sr {margin-left:auto; font-size:13px;}
 .note {color:var(--mu); font-size:13px;}
-.lk, .rl {text-decoration:none; color:inherit;}
-.lk:hover, .rl:hover {text-decoration:underline;}
-.pill {display:inline-block; padding:2px 9px; border-radius:20px; font-size:12px; font-weight:700; white-space:nowrap;
-       background:var(--card2); color:var(--mu); border:1px solid var(--line);}
-.pill.live {background:#3a0d0d; color:#ff5a5a; border-color:#7a1a1a;}
-.pill.pre {background:#3a300d; color:var(--gold); border-color:#6b5715;}
-.pill.post {color:#cfd5df;}
-/* ---------- en-tête du GP (bandeau à la carte) ---------- */
-.gph {position:relative; overflow:hidden; border-radius:18px; padding:20px 22px; margin:6px 0 14px;
-      background:linear-gradient(135deg, #2a0d0d 0%, #14171f 55%, #0d0f14 100%); border:1px solid #3a1d1d;}
-.gph:before {content:''; position:absolute; inset:0; background:repeating-linear-gradient(115deg, transparent 0 22px,
-      rgba(255,255,255,.025) 22px 44px); pointer-events:none;}
-.gph .fl0 {font-size:46px; float:right; line-height:1;}
-.gph .k {color:var(--acc); font:700 13px 'Barlow Condensed'; letter-spacing:2px; text-transform:uppercase;}
-.gph h1 {font:800 40px/1 'Barlow Condensed'; margin:4px 0; padding:0; color:#fff;}
-.gph .sub {color:var(--mu); font-size:15px;}
-.gph .vids {margin-top:12px; display:flex; flex-wrap:wrap; gap:8px;}
-.vb {display:inline-block; padding:8px 14px; border-radius:10px; background:var(--acc); color:#fff !important; font-weight:700;
-     text-decoration:none; white-space:nowrap;}
-.vb small {opacity:.8; font-weight:500;}
-.vb.ghost {background:transparent; border:1px solid var(--line); color:var(--mu) !important;}
-/* ---------- séances ---------- */
-.ses-grid {display:grid; grid-template-columns:repeat(auto-fill, minmax(270px, 1fr)); gap:10px;}
-.ses {position:relative; background:var(--card); border:1px solid var(--line); border-radius:14px; padding:12px 14px; min-width:0;
-      display:flex; flex-direction:column; gap:6px;}
-.ses.race {border-color:#5a2020; background:linear-gradient(160deg, #221216, var(--card) 60%);}
-.ses.live {border-color:#c62828; box-shadow:0 0 0 1px #c62828 inset;}
-.ses .top {display:flex; justify-content:space-between; align-items:baseline; gap:8px;}
-.ses .nm {font:700 20px 'Barlow Condensed'; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
-.ses .hr {color:var(--mu); font-size:13px; white-space:nowrap;}
-.ses .meta {color:var(--mu); font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
-.ses .wt {font-size:13px; white-space:nowrap;}
-.ses .wt b {font-weight:700;}
+.pill {display:inline-flex; align-items:center; gap:5px; padding:3px 10px; border-radius:4px; font:700 12px var(--B);
+  white-space:nowrap; text-transform:uppercase; letter-spacing:.8px; background:var(--card2); color:var(--silver);}
+.pill.live {background:var(--red); color:#fff; animation:pulse 1.6s infinite;}
+.pill.pre {background:rgba(243,195,78,.14); color:var(--gold);}
+.pill.post {background:rgba(255,255,255,.08);}
+@keyframes pulse {0%,100% {box-shadow:0 0 0 0 rgba(225,6,0,.6);} 50% {box-shadow:0 0 0 6px rgba(225,6,0,0);}}
+.kerb {height:6px; background:repeating-linear-gradient(90deg, var(--red) 0 22px, #fff 22px 44px);}
+/* ---------- grand en-tête du GP ---------- */
+.hero {position:relative; border-radius:18px; overflow:hidden; margin:8px 0 6px; background:#000; isolation:isolate;
+  border:1px solid var(--line); box-shadow:0 30px 80px rgba(0,0,0,.5);}
+.hero-bg {position:absolute; inset:0; background:var(--img) center/cover no-repeat; z-index:-2; transform:scale(1.03);
+  filter:saturate(1.1) contrast(1.05);}
+.hero:before {content:''; position:absolute; inset:0; z-index:-1;
+  background:linear-gradient(90deg, rgba(4,5,8,.97) 0%, rgba(4,5,8,.85) 38%, rgba(4,5,8,.35) 70%, rgba(4,5,8,.6) 100%),
+             linear-gradient(0deg, rgba(4,5,8,.95) 0%, transparent 45%);}
+.hero-in {display:flex; justify-content:space-between; gap:20px; padding:28px 32px 18px; min-height:290px;}
+.hero-l {min-width:0; display:flex; flex-direction:column; gap:8px;}
+.rnd {display:inline-flex; align-items:center; gap:8px; align-self:flex-start; background:var(--red); color:#fff;
+  padding:4px 14px 4px 12px; transform:skewX(-14deg); font:800 13px var(--D); letter-spacing:2px; text-transform:uppercase;}
+.rnd b {font:900 italic 20px/1 var(--D);} .rnd i {opacity:.7; font-style:normal;}
+.ctry {display:flex; align-items:center; gap:10px; color:#dfe3ea; font:600 14px var(--B); letter-spacing:2px; text-transform:uppercase;}
+.ctry img {height:20px; border-radius:2px; box-shadow:0 2px 8px rgba(0,0,0,.6);}
+.hero h1 {font:900 italic 64px/.88 var(--D) !important; text-transform:uppercase; color:#fff !important; margin:4px 0 0 !important;
+  padding:0 !important; letter-spacing:-.5px; text-shadow:0 6px 30px rgba(0,0,0,.6);}
+.hero h1 em {display:block; font-style:italic; color:transparent; -webkit-text-stroke:1.5px #fff; letter-spacing:0;}
+.hsub {color:#c9ced8; font-size:15px;}
+.hstate {display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:4px;}
+.hcd {font:800 italic 20px var(--D); color:#fff; text-transform:uppercase; letter-spacing:.5px;}
+.hcd span {color:var(--red2);}
+.hero-r {flex:0 0 300px; display:flex; align-items:center; justify-content:center; position:relative;}
+.hero-r img {width:280px; max-width:100%; filter:drop-shadow(0 0 14px rgba(225,6,0,.75)) drop-shadow(0 0 2px #fff); opacity:.95;}
+.hstats {display:grid; grid-template-columns:repeat(5, 1fr); border-top:1px solid rgba(255,255,255,.1);
+  background:rgba(0,0,0,.55); backdrop-filter:blur(6px);}
+.hstats div {padding:12px 16px; border-right:1px solid rgba(255,255,255,.08); min-width:0;}
+.hstats div:last-child {border-right:none;}
+.hstats b {display:block; font:800 italic 26px/1 var(--D); color:#fff; white-space:nowrap;}
+.hstats b small {font-size:15px; color:var(--mu); font-style:normal;}
+.hstats span {color:var(--mu); font-size:11px; text-transform:uppercase; letter-spacing:1.4px; white-space:nowrap;}
+/* ---------- barre d'outils (tout dévoiler) ---------- */
+.st-key-tools {margin:6px 0 0;}
+.st-key-tools label p {font-weight:600;}
+/* ---------- replays ---------- */
+.rps {display:grid; grid-template-columns:repeat(auto-fill, minmax(250px, 1fr)); gap:12px;}
+.rp {position:relative; display:flex; flex-direction:column; justify-content:flex-end; min-height:170px; border-radius:14px;
+  overflow:hidden; padding:14px; isolation:isolate; border:1px solid var(--line); transition:transform .15s, box-shadow .15s;}
+.rp:before {content:''; position:absolute; inset:0; z-index:-2; background:var(--img) center/cover; filter:saturate(.9) brightness(.55);
+  transition:transform .4s;}
+.rp:after {content:''; position:absolute; inset:0; z-index:-1; background:linear-gradient(0deg, rgba(0,0,0,.9) 10%, rgba(0,0,0,.15) 70%);}
+.rp:has(.rpa):hover {transform:translateY(-3px); box-shadow:0 14px 40px rgba(225,6,0,.25);}
+.rp:has(.rpa):hover:before {transform:scale(1.06);}
+.rp .rpa {position:absolute; inset:0; z-index:1;}
+.rp .alt {position:relative; z-index:2;}
+.rp .src, .rp .dur, .rp .play {pointer-events:none;}
+.rp .src {position:absolute; top:12px; left:12px; padding:3px 9px; font:800 12px var(--D); letter-spacing:1px; border-radius:4px;
+  text-transform:uppercase;}
+.rp.canal .src {background:#000; color:#fff; border:1px solid rgba(255,255,255,.35);}
+.rp.off_ .src, .rp.motogp .src {background:var(--red); color:#fff;}
+.rp .play {position:absolute; top:34%; left:50%; transform:translate(-50%, -50%); width:54px; height:54px; border-radius:50%;
+  background:rgba(225,6,0,.92); display:flex; align-items:center; justify-content:center; box-shadow:0 8px 30px rgba(225,6,0,.5);}
+.rp .play:after {content:''; margin-left:5px; border-left:18px solid #fff; border-top:11px solid transparent; border-bottom:11px solid transparent;}
+.rp.find .play {background:rgba(255,255,255,.14); box-shadow:none; border:1px solid rgba(255,255,255,.4);}
+.rp.off {opacity:.55;} .rp.off .play {display:none;}
+.rp b {font:800 italic 22px/1.05 var(--D); color:#fff; text-transform:uppercase;}
+.rp small {display:block; color:var(--red2); font:700 12px var(--B); letter-spacing:1.5px; text-transform:uppercase;}
+.rp .dur {position:absolute; top:12px; right:12px; background:rgba(0,0,0,.7); color:#fff; font:600 12px var(--B); padding:2px 7px;
+  border-radius:4px;}
+.rp .alt {color:#c9ced8; font-size:12px; margin-top:4px;}
+.rp .alt a {color:#fff !important; text-decoration:underline !important;}
+/* ---------- le week-end (frise par jour) ---------- */
+.tl {display:grid; grid-template-columns:repeat(3, 1fr); gap:14px;}
+.tl .day {min-width:0; display:flex; flex-direction:column; gap:10px;}
+.tl .dh {font:900 italic 22px var(--D); text-transform:uppercase; color:#fff; display:flex; align-items:baseline; gap:8px;
+  border-bottom:2px solid var(--line); padding-bottom:6px;}
+.tl .dh span {color:var(--mu); font:600 13px var(--B); text-transform:none; font-style:normal;}
+.tl .dh.today {border-color:var(--red);}
+.ses {position:relative; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px 14px 12px 16px;
+  min-width:0; overflow:hidden;}
+.ses:before {content:''; position:absolute; left:0; top:0; bottom:0; width:4px; background:rgba(255,255,255,.12);}
+.ses.race {background:linear-gradient(135deg, rgba(225,6,0,.16), var(--card) 55%); border-color:rgba(225,6,0,.35);}
+.ses.race:before {background:repeating-linear-gradient(180deg, var(--red) 0 10px, #fff 10px 20px);}
+.ses.q:before {background:var(--gold);}
+.ses.live {border-color:var(--red); box-shadow:0 0 0 1px var(--red) inset, 0 0 30px rgba(225,6,0,.25);}
+.ses .top {display:flex; align-items:center; gap:10px; min-width:0;}
+.ses .t {font:800 italic 26px/1 var(--D); color:#fff; width:64px; flex:none; white-space:nowrap;}
+.ses .nm {font:800 19px/1.1 var(--D); text-transform:uppercase; letter-spacing:.4px; white-space:nowrap; overflow:hidden;
+  text-overflow:ellipsis; min-width:0;}
+.ses .nm small {display:block; font:500 12px var(--B); color:var(--mu); text-transform:none; letter-spacing:0;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+.ses .st {margin-left:auto; flex:none;}
+.ses .wt {font-size:13px; margin-top:8px; white-space:nowrap;}
+.ses .body {margin-top:8px;}
+.ses .done {color:var(--ok); font-weight:700; font-size:18px;}
+/* ---------- blocs cachés ---------- */
 .hb {position:relative;}
 .hb > input {position:absolute; opacity:0; pointer-events:none;}
-.hbl {display:inline-flex; align-items:center; gap:6px; cursor:pointer; padding:6px 12px; border-radius:10px; font-weight:700;
-      border:1px dashed #555c6b; color:var(--mu); background:repeating-linear-gradient(135deg, #1b1f28 0 8px, #20252f 8px 16px);
-      white-space:nowrap; user-select:none;}
-.hbl:hover {color:var(--tx); border-color:var(--mu);}
-.hbc {display:none; cursor:pointer; color:var(--mu); font-size:12px; margin-left:8px; white-space:nowrap;}
-.hbx {display:none; margin-top:8px;}
+.hbl {display:inline-flex; align-items:center; gap:8px; cursor:pointer; padding:7px 14px; border-radius:6px; font:700 14px var(--B);
+  color:#fff; background:linear-gradient(90deg, rgba(225,6,0,.25), rgba(225,6,0,.08)); border:1px solid rgba(225,6,0,.45);
+  white-space:nowrap; user-select:none; transition:background .15s;}
+.hbl span {filter:grayscale(1) brightness(2);}
+.hbl:hover {background:linear-gradient(90deg, rgba(225,6,0,.45), rgba(225,6,0,.15));}
+.hbc {display:none; cursor:pointer; color:var(--mu); font-size:12px; white-space:nowrap; position:absolute; right:0; top:-2px;}
+.hbx {display:none; margin-top:4px;}
 .hb > input:checked ~ .hbl {display:none;}
 .hb > input:checked ~ .hbc {display:inline-block;}
-.hb > input:checked ~ .hbx, .all .hbx {display:block;}
+.hb > input:checked ~ .hbx, .all .hbx {display:block; animation:rise .25s ease-out;}
 .all .hbl, .all .hbc {display:none !important;}
-.mini {display:flex; flex-direction:column; gap:3px;}
-.mini .l {display:flex; align-items:center; gap:7px; font-size:14px; white-space:nowrap; overflow:hidden; min-width:0;}
-.mini .l .p {font:800 16px 'Barlow Condensed'; width:18px; color:var(--gold);}
-.mini .l .rn {overflow:hidden; text-overflow:ellipsis;}
-.mini .l .g {margin-left:auto; color:var(--mu); font-size:12px;}
-.mini .me {color:var(--gold);}
-/* ---------- tableaux ---------- */
+@keyframes rise {from {opacity:0; transform:translateY(4px);} to {opacity:1; transform:none;}}
+/* ---------- résultats ---------- */
+.mini {display:flex; flex-direction:column; gap:6px; padding-top:18px;}
+.mini .l {display:flex; align-items:center; gap:9px; font-size:14px; white-space:nowrap; min-width:0;}
+.mini .l .p {font:900 italic 20px var(--D); width:20px; text-align:center;}
+.mini .l.p1 .p {color:var(--gold);} .mini .l.p2 .p {color:var(--silver);} .mini .l.p3 .p {color:var(--bronze);}
+.mini .l .mn {overflow:hidden; text-overflow:ellipsis; font-weight:600; min-width:0; white-space:nowrap;}
+.mini .l .g {margin-left:auto; color:var(--mu); font-size:12px; font-variant-numeric:tabular-nums;}
+.mini .l.me .mn {color:var(--gold);}
+.hd {position:relative; flex:none; border-radius:50%; overflow:hidden; display:inline-flex; align-items:flex-end; justify-content:center;
+  background:radial-gradient(circle at 50% 30%, color-mix(in srgb, var(--c) 85%, #fff), var(--c) 60%, color-mix(in srgb, var(--c) 50%, #000));
+  box-shadow:0 0 0 2px rgba(255,255,255,.12);}
+.hd img {width:118%; height:auto; margin-bottom:-12%; object-fit:cover;}
+.hdn {align-items:center; color:#fff; font-family:var(--D); font-weight:900; font-style:italic;}
 table.res {width:100%; border-collapse:collapse; font-size:14px;}
-table.res th {text-align:left; color:var(--mu); font-weight:600; font-size:12px; padding:6px 8px; border-bottom:1px solid var(--line);
-              white-space:nowrap;}
-table.res td {padding:6px 8px; border-bottom:1px solid #1f2430; white-space:nowrap;}
-table.res .r {text-align:right;}
-table.res .ps {font:800 17px 'Barlow Condensed'; width:30px;}
-table.res tr.p1 .ps {color:var(--gold);} table.res tr.p2 .ps {color:#cfd5df;} table.res tr.p3 .ps {color:#d08a4a;}
-table.res tr.fav td {background:#2a2410;}
+table.res th {text-align:left; color:var(--mu); font:600 11px var(--B); text-transform:uppercase; letter-spacing:1.2px; padding:8px;
+  border-bottom:1px solid var(--line); white-space:nowrap;}
+table.res td {padding:7px 8px; border-bottom:1px solid rgba(255,255,255,.05); white-space:nowrap;}
+table.res tr:hover td {background:rgba(255,255,255,.03);}
+table.res .r {text-align:right;} table.res .l {text-align:left;}
+table.res .ps span {display:inline-block; min-width:30px; text-align:center; font:900 italic 18px var(--D); border-left:4px solid var(--c);
+  padding-left:4px;}
+table.res tr.p1 .ps span {color:var(--gold);} table.res tr.p2 .ps span {color:var(--silver);} table.res tr.p3 .ps span {color:var(--bronze);}
+table.res tr.fav td {background:rgba(243,195,78,.08);}
 table.res tr.out td {color:var(--mu);}
 table.res .g {color:var(--mu); font-variant-numeric:tabular-nums;}
-table.res .pts {font-weight:700;}
-.rc {display:inline-flex; align-items:center; gap:7px; min-width:0;}
+table.res .pts {font:800 16px var(--D);}
+.rc {display:inline-flex; align-items:center; gap:10px; min-width:0;}
 .rn {display:flex; flex-direction:column; line-height:1.15; min-width:0;}
-.rn b {white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
-.rn .tm {color:var(--mu); font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:220px;}
-.nb {display:inline-block; min-width:26px; text-align:center; font:800 13px/20px 'Barlow Condensed'; border-radius:5px; padding:0 3px;}
-.fl {font-size:15px;}
-.ph {border-radius:50%; object-fit:cover; object-position:top; flex:none;}
-.phn {display:inline-flex; align-items:center; justify-content:center; color:#fff; font:800 16px 'Barlow Condensed';}
-.podium {display:grid; grid-template-columns:1fr 1.15fr 1fr; gap:10px; align-items:end; margin:6px 0 14px;}
-.pd {background:linear-gradient(180deg, color-mix(in srgb, var(--c) 45%, #000) 0%, var(--card) 100%); border-radius:14px;
-     padding:12px 8px 10px; text-align:center; border:1px solid var(--line); min-width:0; position:relative;}
-.pd1 {padding-top:18px; border-color:#6b5715;}
-.pd .ph {border:2px solid rgba(255,255,255,.25);}
-.pdn {font:800 20px 'Barlow Condensed'; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:4px;}
-.pdt {color:var(--mu); font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
-.pdg {color:var(--mu); font-size:12px;}
-.pdb {position:absolute; top:6px; left:8px; font:800 22px 'Barlow Condensed'; color:var(--gold);}
-.pd2 .pdb {color:#cfd5df;} .pd3 .pdb {color:#d08a4a;}
-/* ---------- brief ---------- */
-.bf-grid {display:grid; grid-template-columns:1fr 1fr; gap:12px; align-items:stretch; margin-top:12px;}
+.rn b {white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-weight:600;}
+.rn .tm {color:var(--mu); font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:240px;}
+.nb {display:inline-block; min-width:28px; text-align:center; font:900 italic 14px/20px var(--D); border-radius:4px; padding:0 4px;}
+.podium {display:grid; grid-template-columns:1fr 1.18fr 1fr; gap:12px; align-items:end; margin:10px 0 16px;}
+.pd {position:relative; border-radius:14px; overflow:hidden; min-width:0; border:1px solid var(--line);
+  background:linear-gradient(180deg, color-mix(in srgb, var(--c) 70%, #000) 0%, #0c0e13 85%);}
+.pd:before {content:''; position:absolute; inset:0; background:repeating-linear-gradient(115deg, transparent 0 18px, rgba(255,255,255,.03) 18px 36px);}
+.pdi {height:150px; display:flex; align-items:flex-end; justify-content:center; position:relative;}
+.pd1 .pdi {height:190px;}
+.pdi img {height:100%; width:auto; object-fit:contain; filter:drop-shadow(0 10px 20px rgba(0,0,0,.5));}
+.pdi i {font:900 italic 80px var(--D); color:rgba(255,255,255,.3);}
+.pdx {position:relative; padding:10px 12px 12px; background:linear-gradient(0deg, rgba(0,0,0,.85), rgba(0,0,0,.4));}
+.pdp {position:absolute; right:10px; top:-46px; font:900 italic 64px/1 var(--D); color:#fff; opacity:.9; text-shadow:0 4px 16px rgba(0,0,0,.6);}
+.pd1 .pdp {color:var(--gold);} .pd2 .pdp {color:var(--silver);} .pd3 .pdp {color:var(--bronze);}
+.pdn {font:900 italic 22px var(--D); text-transform:uppercase; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+.pdt {color:#c3c9d3; font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+.pdg {color:var(--mu); font-size:12px; font-variant-numeric:tabular-nums;}
+.pd1 {box-shadow:0 0 0 1px rgba(243,195,78,.5), 0 20px 50px rgba(243,195,78,.12);}
+/* ---------- cartes du brief ---------- */
+.bf-grid {display:grid; grid-template-columns:1fr 1fr; gap:14px; align-items:stretch;}
 .bf-grid .full {grid-column:1 / -1;}
-.card {background:var(--card); border:1px solid var(--line); border-radius:16px; padding:14px 16px; min-width:0;}
-.card h3 {font:800 22px 'Barlow Condensed'; margin:0 0 4px; padding:0; color:var(--tx); white-space:nowrap; overflow:hidden;
-          text-overflow:ellipsis;}
-.card .tease {color:var(--mu); font-size:14px; margin-bottom:8px;}
-.card .ico {font-size:26px; float:right;}
+.card {position:relative; background:var(--card); border:1px solid var(--line); border-radius:16px; padding:16px 18px; min-width:0;
+  overflow:hidden;}
+.card h3 {font:900 italic 24px/1.05 var(--D) !important; text-transform:uppercase; margin:0 0 4px !important; padding:0 !important;
+  color:#fff !important; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+.card .tease {color:var(--mu); font-size:14px; margin-bottom:12px;}
+.card .ico {position:absolute; right:14px; top:10px; font-size:34px; opacity:.9;}
 .facts {margin:0; padding:0; list-style:none;}
-.facts li {padding:6px 0; border-bottom:1px solid #222836; font-size:15px;}
+.facts li {padding:8px 0; border-bottom:1px solid rgba(255,255,255,.06); font-size:15px;}
 .facts li:last-child {border:none;}
-.mv {display:flex; align-items:center; gap:8px; padding:4px 0; font-size:14px; white-space:nowrap; min-width:0;}
-.mv .rk {font:800 17px 'Barlow Condensed'; width:22px;}
-.mv .ar {width:34px; font-weight:700; text-align:center;}
-.mv .up {color:var(--ok);} .mv .dn {color:#ff6b6b;} .mv .eq {color:var(--mu);}
-.mv .pt {margin-left:auto; color:var(--mu);}
-.fav-band {display:flex; align-items:center; gap:14px; border-radius:16px; padding:12px 16px; margin:10px 0;
-           background:linear-gradient(90deg, color-mix(in srgb, var(--c) 55%, #000), var(--card) 75%); border:1px solid var(--line);}
-.fav-band .ph {border:2px solid rgba(255,255,255,.3);}
-.fav-band .t {font:800 22px 'Barlow Condensed'; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
-.fav-band .s {color:#d9dee7; font-size:14px;}
+.mv {display:flex; align-items:center; gap:10px; padding:5px 0; font-size:14px; white-space:nowrap; min-width:0;}
+.mv .rk {font:900 italic 20px var(--D); width:24px; text-align:center;}
+.mv .ar {width:36px; font:800 13px var(--B); text-align:center;}
+.mv .up {color:var(--ok);} .mv .dn {color:var(--red2);} .mv .eq {color:var(--mu);}
+.mv .pt {margin-left:auto; font:800 17px var(--D);}
+.mv .rn2 {overflow:hidden; text-overflow:ellipsis; font-weight:600;}
+.fav {position:relative; display:flex; align-items:stretch; gap:0; border-radius:16px; overflow:hidden; margin:14px 0 0; min-height:150px;
+  background:linear-gradient(110deg, color-mix(in srgb, var(--c) 80%, #000) 0%, color-mix(in srgb, var(--c) 35%, #07080b) 45%, #0b0d12 100%);
+  border:1px solid var(--line);}
+.fav:before {content:attr(data-n); position:absolute; right:18px; top:-20px; font:900 italic 170px/1 var(--D); color:rgba(255,255,255,.06);}
+.fav .fi {flex:0 0 170px; display:flex; align-items:flex-end; justify-content:center;}
+.fav .fi img {height:160px; width:auto; filter:drop-shadow(0 10px 20px rgba(0,0,0,.5));}
+.fav .fb {padding:16px 18px; min-width:0; position:relative;}
+.fav .k {color:var(--gold); font:700 12px var(--B); letter-spacing:2px; text-transform:uppercase;}
+.fav .t {font:900 italic 34px/1 var(--D); text-transform:uppercase; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+.fav .s {color:#d9dee7; font-size:14px; margin-top:4px;}
+.fav .nums {display:flex; gap:22px; margin-top:10px; flex-wrap:wrap;}
+.fav .nums div b {display:block; font:900 italic 28px/1 var(--D);}
+.fav .nums div span {color:#c3c9d3; font-size:11px; text-transform:uppercase; letter-spacing:1.2px;}
+/* ---------- prochain GP ---------- */
+.nx {position:relative; display:block; border-radius:16px; overflow:hidden; min-height:200px; padding:18px; isolation:isolate;
+  border:1px solid var(--line);}
+.nx:before {content:''; position:absolute; inset:0; z-index:-2; background:var(--img) center/cover; filter:brightness(.5);}
+.nx:after {content:''; position:absolute; inset:0; z-index:-1; background:linear-gradient(90deg, rgba(0,0,0,.92), rgba(0,0,0,.2));}
+.nx .k {color:var(--red2); font:700 12px var(--B); letter-spacing:2px; text-transform:uppercase;}
+.nx b {display:block; font:900 italic 34px/1 var(--D); text-transform:uppercase; color:#fff; margin:4px 0;}
+.nx .s {color:#d0d5de; font-size:14px;}
+.nx .cd {font:800 italic 22px var(--D); color:#fff; margin-top:10px; text-transform:uppercase;}
+.nx .tms {display:flex; gap:18px; margin-top:12px; flex-wrap:wrap;}
+.nx .tms div {white-space:nowrap;} .nx .tms span {display:block; color:var(--mu); font-size:11px; text-transform:uppercase; letter-spacing:1.2px;}
+.nx .tms b {font-size:20px; margin:0;}
+.nx img.trk {position:absolute; right:18px; bottom:14px; width:130px; filter:drop-shadow(0 0 8px rgba(225,6,0,.8)); opacity:.9;}
 /* ---------- calendrier ---------- */
-.cal {display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:10px;}
-.cal .c {background:var(--card); border:1px solid var(--line); border-radius:14px; padding:12px 14px; display:flex; gap:12px;
-         align-items:center; min-width:0; text-decoration:none;}
-.cal .c.next {border-color:#6b5715; background:linear-gradient(160deg, #2a2410, var(--card) 70%);}
-.cal .c.live {border-color:#c62828;}
-.cal .c.done {opacity:.75;}
-.cal .r {font:800 26px 'Barlow Condensed'; color:var(--mu); width:30px; text-align:center;}
-.cal .f {font-size:30px;}
-.cal .t {min-width:0;}
-.cal .t b {display:block; font:700 19px 'Barlow Condensed'; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
-.cal .t span {display:block; color:var(--mu); font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+.cal {display:grid; grid-template-columns:repeat(auto-fill, minmax(290px, 1fr)); gap:14px;}
+.cc {position:relative; display:block; border-radius:14px; overflow:hidden; min-height:170px; isolation:isolate; border:1px solid var(--line);
+  transition:transform .15s, box-shadow .15s;}
+.cc:before {content:''; position:absolute; inset:0; z-index:-2; background:var(--img) center/cover; filter:brightness(.55) saturate(1.1);
+  transition:transform .4s;}
+.cc:after {content:''; position:absolute; inset:0; z-index:-1; background:linear-gradient(0deg, rgba(0,0,0,.95) 15%, rgba(0,0,0,.15) 75%);}
+a.cc:hover {transform:translateY(-3px); box-shadow:0 16px 40px rgba(0,0,0,.6);}
+a.cc:hover:before {transform:scale(1.05);}
+.cc.done:before {filter:brightness(.35) grayscale(.8);}
+.cc.next {box-shadow:0 0 0 2px var(--red), 0 18px 50px rgba(225,6,0,.3);}
+.cc.live {box-shadow:0 0 0 2px var(--red);}
+.cc .r {position:absolute; top:8px; left:14px; font:900 italic 46px/1 var(--D); color:rgba(255,255,255,.9); text-shadow:0 4px 18px rgba(0,0,0,.6);}
+.cc .stt {position:absolute; top:12px; right:12px;}
+.cc .trk {position:absolute; right:12px; bottom:56px; width:84px; opacity:.85; filter:drop-shadow(0 0 6px rgba(225,6,0,.7));}
+.cc .b {position:absolute; left:14px; right:14px; bottom:12px;}
+.cc .b .f {display:flex; align-items:center; gap:8px; color:#d0d5de; font-size:12px; text-transform:uppercase; letter-spacing:1.2px;}
+.cc .b .f img {height:14px; border-radius:2px;}
+.cc .b b {display:block; font:900 italic 24px/1.05 var(--D); text-transform:uppercase; color:#fff; white-space:nowrap; overflow:hidden;
+  text-overflow:ellipsis;}
+.cc .b span.c {display:block; color:var(--mu); font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+.times {width:100%; border-collapse:collapse;}
+.times td {padding:9px 10px; border-bottom:1px solid rgba(255,255,255,.06); white-space:nowrap;}
+.times td.n {font:800 18px var(--D); text-transform:uppercase;}
+.times tr.race td {background:rgba(225,6,0,.08);} .times tr.race td.n {color:var(--red2);}
 /* ---------- classement ---------- */
+.top3 {display:grid; grid-template-columns:repeat(3, 1fr); gap:12px; margin-bottom:16px;}
+.t3 {position:relative; border-radius:16px; overflow:hidden; min-height:200px; border:1px solid var(--line); display:flex; align-items:flex-end;
+  background:linear-gradient(160deg, color-mix(in srgb, var(--c) 75%, #000), #0b0d12 80%);}
+.t3:before {content:attr(data-n); position:absolute; right:10px; top:-14px; font:900 italic 120px/1 var(--D); color:rgba(255,255,255,.07);}
+.t3 img {position:absolute; right:0; bottom:0; height:190px; width:auto; filter:drop-shadow(0 8px 20px rgba(0,0,0,.6));}
+.t3 .b {position:relative; padding:14px; z-index:1; min-width:0; max-width:62%;}
+.t3 .p {font:900 italic 44px/1 var(--D);} .t3.r1 .p {color:var(--gold);} .t3.r2 .p {color:var(--silver);} .t3.r3 .p {color:var(--bronze);}
+.t3 .n {font:900 italic 24px/1 var(--D); text-transform:uppercase; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+.t3 .tm {color:#c3c9d3; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+.t3 .pts {font:900 italic 30px/1 var(--D); margin-top:8px;} .t3 .pts small {font-size:14px; color:var(--mu);}
 table.std {width:100%; border-collapse:collapse; font-size:14px;}
-table.std th {color:var(--mu); font-size:12px; font-weight:600; text-align:right; padding:6px 6px; border-bottom:1px solid var(--line);
-              white-space:nowrap;}
+table.std th {color:var(--mu); font:600 11px var(--B); text-transform:uppercase; letter-spacing:1.2px; text-align:right; padding:8px 6px;
+  border-bottom:1px solid var(--line); white-space:nowrap;}
 table.std th.l, table.std td.l {text-align:left;}
-table.std td {text-align:right; padding:6px 6px; border-bottom:1px solid #1f2430; white-space:nowrap;}
-table.std td.pts {font-weight:800; font-size:16px;}
-table.std tr.fav td {background:#2a2410;}
-table.std .rk {font:800 17px 'Barlow Condensed'; text-align:center; width:30px;}
-.lp {display:inline-block; min-width:22px; padding:0 4px; margin-left:2px; border-radius:4px; background:var(--card2);
-     font-size:12px; text-align:center;}
-.lp.w {background:#6b5715; color:#fff;} .lp.pd {background:#2f3642;} .lp.x {background:#3a1414; color:#ff8080;}
+table.std td {text-align:right; padding:7px 6px; border-bottom:1px solid rgba(255,255,255,.05); white-space:nowrap;}
+table.std tr:hover td {background:rgba(255,255,255,.03);}
+table.std td.pts {font:900 italic 19px var(--D);}
+table.std tr.fav td {background:rgba(243,195,78,.08);}
+table.std .rk {font:900 italic 19px var(--D); text-align:center; width:34px;}
+.bar {display:block; height:5px; border-radius:3px; background:linear-gradient(90deg, var(--c), color-mix(in srgb, var(--c) 40%, transparent));
+  margin-top:4px;}
+.lp {display:inline-block; min-width:24px; padding:1px 4px; margin-left:3px; border-radius:4px; background:var(--card2);
+  font:700 12px var(--D); text-align:center;}
+.lp.w {background:var(--gold); color:#000;} .lp.pd {background:#3b4250;} .lp.x {background:rgba(225,6,0,.3); color:#ff9a95;}
 .scroll {overflow-x:auto;}
 /* ---------- pilotes ---------- */
-.rg {display:grid; grid-template-columns:repeat(auto-fill, minmax(170px, 1fr)); gap:10px;}
-.rt {position:relative; overflow:hidden; border-radius:14px; padding:10px; text-decoration:none; min-width:0; display:block;
-     background:linear-gradient(170deg, color-mix(in srgb, var(--c) 70%, #000), #12151c 85%); border:1px solid var(--line);}
-.rt img {display:block; width:100%; height:150px; object-fit:contain; object-position:bottom;}
-.rt .n {position:absolute; top:6px; right:10px; font:800 34px 'Barlow Condensed'; color:rgba(255,255,255,.35);}
-.rt b {display:block; font:800 19px 'Barlow Condensed'; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:#fff;}
-.rt span {display:block; font-size:11px; color:#c9cfda; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
-.rhead {display:flex; gap:18px; align-items:flex-end; border-radius:18px; padding:16px 20px 0; margin:8px 0 14px; overflow:hidden;
-        background:linear-gradient(120deg, color-mix(in srgb, var(--c) 75%, #000), #12151c 80%); border:1px solid var(--line);}
-.rhead img {height:190px; width:auto;}
-.rhead .i {padding-bottom:16px; min-width:0;}
-.rhead .num {font:800 54px/1 'Barlow Condensed'; color:rgba(255,255,255,.4);}
-.rhead h1 {font:800 40px/1 'Barlow Condensed'; color:#fff; margin:0; padding:0;}
-.rhead .s {color:#dfe3ea; font-size:14px;}
-.tiles {display:grid; grid-template-columns:repeat(auto-fill, minmax(130px, 1fr)); gap:8px; margin:6px 0 12px;}
-.tile {background:var(--card); border:1px solid var(--line); border-radius:12px; padding:10px 12px; min-width:0;}
-.tile b {display:block; font:800 28px/1 'Barlow Condensed';}
-.tile span {color:var(--mu); font-size:12px; white-space:nowrap;}
+.rg {display:grid; grid-template-columns:repeat(auto-fill, minmax(190px, 1fr)); gap:12px;}
+.rt {position:relative; overflow:hidden; border-radius:16px; text-decoration:none; min-width:0; display:block; height:270px;
+  background:linear-gradient(165deg, color-mix(in srgb, var(--c) 85%, #000) 0%, color-mix(in srgb, var(--c) 30%, #0b0d12) 55%, #0b0d12 100%);
+  border:1px solid var(--line); transition:transform .15s, box-shadow .15s;}
+a.rt:hover {transform:translateY(-4px); box-shadow:0 18px 40px rgba(0,0,0,.6);}
+.rt .n {position:absolute; top:-8px; right:6px; font:900 italic 96px/1 var(--D); color:rgba(255,255,255,.14);}
+.rt img {position:absolute; left:50%; transform:translateX(-50%); bottom:58px; height:190px; width:auto;
+  filter:drop-shadow(0 10px 18px rgba(0,0,0,.55)); transition:transform .3s;}
+a.rt:hover img {transform:translateX(-50%) scale(1.04);}
+.rt .b {position:absolute; left:0; right:0; bottom:0; padding:10px 12px; background:linear-gradient(0deg, rgba(0,0,0,.92), rgba(0,0,0,.5));}
+.rt .b small {display:block; color:#c9ced8; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+.rt .b b {display:block; font:900 italic 22px/1 var(--D); text-transform:uppercase; color:#fff; white-space:nowrap; overflow:hidden;
+  text-overflow:ellipsis;}
+.rt .b span {display:block; font-size:11px; color:var(--mu); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+.rt .rk {position:absolute; top:10px; left:10px; background:rgba(0,0,0,.6); padding:2px 8px; border-radius:4px; font:800 13px var(--D);}
+.rhead {position:relative; display:flex; gap:24px; align-items:flex-end; border-radius:18px; padding:20px 24px 0; margin:8px 0 14px;
+  overflow:hidden; min-height:240px;
+  background:linear-gradient(115deg, color-mix(in srgb, var(--c) 85%, #000) 0%, color-mix(in srgb, var(--c) 30%, #0b0d12) 50%, #0b0d12 100%);
+  border:1px solid var(--line);}
+.rhead:before {content:attr(data-n); position:absolute; right:30px; top:-30px; font:900 italic 260px/1 var(--D); color:rgba(255,255,255,.07);}
+.rhead img {height:240px; width:auto; position:relative; filter:drop-shadow(0 10px 30px rgba(0,0,0,.6));}
+.rhead .i {padding-bottom:22px; min-width:0; position:relative;}
+.rhead .fn {font:600 18px var(--B); color:#e6e9ef; text-transform:uppercase; letter-spacing:3px;}
+.rhead h1 {font:900 italic 64px/.9 var(--D) !important; color:#fff !important; margin:0 !important; padding:0 !important;
+  text-transform:uppercase;}
+.rhead .s {color:#dfe3ea; font-size:14px; margin-top:6px;}
+.tiles {display:grid; grid-template-columns:repeat(auto-fill, minmax(130px, 1fr)); gap:10px; margin:6px 0 12px;}
+.tile {background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px 14px; min-width:0; position:relative; overflow:hidden;}
+.tile:before {content:''; position:absolute; left:0; top:0; width:30px; height:3px; background:var(--red);}
+.tile b {display:block; font:900 italic 34px/1 var(--D);}
+.tile span {color:var(--mu); font-size:11px; text-transform:uppercase; letter-spacing:1.2px; white-space:nowrap;}
 /* ---------- actus ---------- */
-.news {display:grid; grid-template-columns:repeat(auto-fill, minmax(300px, 1fr)); gap:12px;}
+.news {display:grid; grid-template-columns:repeat(auto-fill, minmax(290px, 1fr)); gap:14px;}
 .nw {background:var(--card); border:1px solid var(--line); border-radius:14px; overflow:hidden; display:flex; flex-direction:column;
-     text-decoration:none; min-width:0;}
-.nw img {width:100%; height:160px; object-fit:cover; display:block; background:#222;}
-.nw .b {padding:10px 12px;}
-.nw .t {font:700 18px/1.2 'Barlow Condensed'; color:var(--tx);}
-.nw .d {color:var(--mu); font-size:13px; margin-top:4px;}
-.nw .m {color:var(--mu); font-size:11px; margin-top:6px; white-space:nowrap;}
+  text-decoration:none; min-width:0; height:100%; transition:transform .15s;}
+a.nw:hover {transform:translateY(-3px);}
+.nw .im {height:170px; background:#15181f var(--img) center/cover;}
+.nw .b {padding:12px 14px;}
+.nw .t {font:800 19px/1.15 var(--D); color:var(--tx);}
+.nw .d {color:var(--mu); font-size:13px; margin-top:6px;}
+.nw .m {color:var(--red2); font:700 11px var(--B); margin-top:8px; white-space:nowrap; text-transform:uppercase; letter-spacing:1px;}
 .nwx {position:relative;}
 .nwx > input {position:absolute; opacity:0; pointer-events:none;}
-.nwx .nw {filter:blur(9px); pointer-events:none; user-select:none;}
+.nwx .nw {filter:blur(10px) brightness(.7); pointer-events:none; user-select:none;}
 .nwx > input:checked ~ .nw, .all .nwx .nw {filter:none; pointer-events:auto;}
 .nwx > label {position:absolute; inset:0; z-index:2; display:flex; flex-direction:column; align-items:center; justify-content:center;
-              text-align:center; gap:4px; cursor:pointer; color:#fff; font-weight:700; padding:16px; background:rgba(10,12,16,.35);}
-.nwx > label small {color:#d0d5de; font-weight:500;}
+  text-align:center; gap:6px; cursor:pointer; color:#fff; font:800 italic 20px var(--D); text-transform:uppercase; padding:16px;}
+.nwx > label small {color:#d0d5de; font:500 13px var(--B); text-transform:none;}
+.nwx > label em {font-style:normal; background:var(--red); padding:4px 12px; border-radius:4px; font:700 13px var(--B);}
 .nwx > input:checked ~ label, .all .nwx > label {display:none;}
-.shield {background:#2a2410; border:1px solid #6b5715; border-radius:12px; padding:10px 14px; margin:6px 0 12px; font-size:14px;}
-.foot {color:#666e7c; font-size:12px; text-align:center; margin:30px 0 10px;}
+.shield {background:linear-gradient(90deg, rgba(225,6,0,.18), rgba(225,6,0,.04)); border:1px solid rgba(225,6,0,.35); border-radius:12px;
+  padding:12px 16px; margin:6px 0 12px; font-size:14px;}
+.foot {color:#5d6574; font-size:12px; text-align:center; margin:40px 0 10px;}
+.foot .kerb {margin:0 auto 14px; width:120px; height:4px; transform:skewX(-20deg);}
+[data-testid="stExpander"] details {background:var(--card); border:1px solid var(--line) !important; border-radius:12px !important;}
+[data-testid="stExpander"] summary p {font:800 18px var(--D) !important; text-transform:uppercase; letter-spacing:.4px;}
+@media (max-width: 900px) {
+  .tl {grid-template-columns:1fr !important;}
+  .hstats {grid-template-columns:repeat(3, 1fr) !important;} .hstats div:nth-child(n+4) {display:none;}
+}
 @media (max-width: 700px) {
+  .block-container {padding-left:.8rem !important; padding-right:.8rem !important;}
+  .brand .lg {font-size:24px;} .brand small {display:none;}
+  .hero-in {flex-direction:column; padding:20px 18px 14px; min-height:0;}
+  .hero h1 {font-size:44px;}
+  .hero-r {position:absolute; right:-20px; top:10px; flex:none; opacity:.55;} .hero-r img {width:150px;}
+  .hstats b {font-size:19px;} .hstats b small {display:none;} .hstats div {padding:10px;}
+  .hstats span {font-size:9px; letter-spacing:.6px; overflow:hidden; text-overflow:ellipsis; display:block;}
+  .brand .sl {display:none;}
   .bf-grid {grid-template-columns:1fr;}
-  .gph h1 {font-size:32px;} .gph .fl0 {font-size:34px;}
-  .rhead img {height:130px;} .rhead h1 {font-size:30px;}
-  .rn .tm {max-width:130px;}
-  .st-key-tabs [data-testid="stHorizontalBlock"] {flex-wrap:nowrap !important; overflow-x:auto; gap:4px;}
+  .top3 {grid-template-columns:1fr;} .t3 {min-height:150px;} .t3 img {height:150px;}
+  .rg {grid-template-columns:repeat(2, 1fr);} .rt {height:230px;} .rt img {height:150px;} .rt .n {font-size:70px;}
+  .rhead {padding:14px 14px 0; gap:10px;} .rhead img {height:150px;} .rhead h1 {font-size:38px;} .rhead:before {font-size:150px;}
+  .rn .tm {max-width:140px;}
+  .podium {gap:6px;} .pdi {height:100px;} .pd1 .pdi {height:130px;} .pdn {font-size:16px;} .pdp {font-size:44px; top:-34px;}
+  .fav .fi {flex-basis:110px;} .fav .fi img {height:120px;} .fav .t {font-size:26px;}
+  .st-key-tabs [data-testid="stHorizontalBlock"] {flex-wrap:nowrap !important; overflow-x:auto; gap:4px; scrollbar-width:none;}
   .st-key-tabs [data-testid="stColumn"] {min-width:max-content !important; flex:none !important; width:auto !important;}
-  .ses-grid {grid-auto-rows:auto;}
 }
 </style>
 """
 
 
-def page_head(title, sub="", kicker=""):
-    k = f"<div class='k'>{esc(kicker)}</div>" if kicker else ""
-    s = f"<p>{sub}</p>" if sub else ""
-    st.markdown(f"<div class='pg-h'>{k}<h2>{esc(title)}</h2>{s}</div>", unsafe_allow_html=True)
-
-
 def page_footer():
-    st.markdown("<div class='foot'>Bada Bing MotoGP · site de fans, non affilié à MotoGP™ / Dorna · données : motogp.com · "
-                f"actus : Motorsport.com, Paddock GP · v{APP_VERSION[-3:]}</div>", unsafe_allow_html=True)
+    st.markdown("<div class='foot'><div class='kerb'></div>Bada Bing MotoGP · site de fans, non affilié à MotoGP™ / Dorna · "
+                "données et photos : motogp.com · vidéos : CANAL+ Sport, MotoGP · actus : Motorsport.com, Paddock GP · "
+                f"v{APP_VERSION[-3:]}</div>", unsafe_allow_html=True)
 
 
 # =========================================================================
 # MORCEAUX DU WEEK-END
 # =========================================================================
 def mini_result(rows, fav=None, n=3, race=True):
-    """Les 3 premiers (+ mon pilote) en lignes courtes."""
+    """Les 3 premiers (+ mon pilote), avec la tête du pilote."""
     out = []
     shown = [r for r in rows if r["pos"] and r["pos"] <= n]
     me = next((r for r in rows if fav and r["rid"] == fav), None)
     for r in shown + ([me] if me and me not in shown else []):
         info = rider_of(r["rid"], r)
         if r["pos"]:
-            g = "" if r["pos"] == 1 else (("+" + fr_num(r["gap"], 3) + " s") if r["gap"] is not None else "")
+            g = "" if r["pos"] == 1 else (("+" + fr_num(r["gap"], 3)) if r["gap"] is not None else "")
             if not race and r["pos"] == 1:
                 g = esc(r.get("best") or "")
         else:
             g = status_fr(r)
-        cls = "l me" if me is r else "l"
-        out.append(f"<div class='{cls}'><span class='p'>{r['pos'] or '–'}</span>{num_badge(info)}<span class='fl'>{flag(r['iso'])}</span>"
-                   f"<span class='rn'>{rider_link(r['rid'], esc(info.get('name') or r['name']))}</span><span class='g'>{g}</span></div>")
+        cls = f"l p{r['pos'] or 0}" + (" me" if me is r else "")
+        out.append(f"<div class='{cls}'><span class='p'>{r['pos'] or '–'}</span>{head(info, 30)}"
+                   f"<span class='mn'>{flag(r['iso'])} {rider_link(r['rid'], esc(short_name(info, r)))}</span>"
+                   f"<span class='g'>{g}</span></div>")
     return f"<div class='mini'>{''.join(out)}</div>"
 
 
 def session_tile(ev, s, rows, zone, fav, show_idx, stakes, grid=None, today=None):
     live = session_live(s)
     race = s["code"] in ("SPR", "RAC")
-    cls = "ses" + (" race" if race else "") + (" live" if live else "")
+    cls = "ses" + (" race" if race else " q" if s["group"] == "q" else "") + (" live" if live else "")
     if session_done(s):
-        state = "<span class='pill post'>✓ Terminée</span>"
+        state = "<span class='done' title='Terminée'>✓</span>"
     elif live:
-        state = "<span class='pill live'>● En cours</span>"
+        state = "<span class='pill live'>● Direct</span>"
     else:
-        state = f"<span class='hr'>{when_txt(s['utc'], zone, today)}{' (prov.)' if s.get('provisional') else ''}</span>"
-    meta = []
-    if session_done(s) or live:
-        meta.append(when_txt(s["utc"], zone, today))
-    if s.get("weather"):
-        meta.append(f"{s['weather']} · {TRACK_FR.get(norm(s['track']), 'piste ' + norm(s['track']))}" + (f" · {s['air']}" if s.get("air") else ""))
+        state = ""
+    sub = []
+    if s.get("weather") and (session_done(s) or live):
+        sub.append(f"{s['weather']} · {TRACK_FR.get(norm(s['track']), 'piste ' + norm(s['track']))}" + (f" · {s['air']}" if s.get("air") else ""))
+    elif not session_done(s) and s["utc"] > now_utc():
+        sub.append(countdown(s["utc"]) + (" · horaire provisoire" if s.get("provisional") else ""))
     body = ""
     if session_done(s) and rows:
         wt = ""
@@ -1347,24 +1691,114 @@ def session_tile(ev, s, rows, zone, fav, show_idx, stakes, grid=None, today=None
             if lvl is not None:
                 ic, nm, _ = WATCH_LEVELS[lvl]
                 wt = f"<div class='wt'>{ic} <b>{nm}</b></div>"
-        body = wt + hidden("👁 Voir le résultat", mini_result(rows, fav, 3, race))
+        body = wt + f"<div class='body'>{hidden('Voir le résultat', mini_result(rows, fav, 3, race))}</div>"
     elif live and rows:
-        body = hidden("👁 Voir le classement en direct", mini_result(rows, fav, 3, race))
+        body = f"<div class='body'>{hidden('Classement en direct', mini_result(rows, fav, 3, race))}</div>"
     elif session_done(s):
-        body = "<div class='meta'>Résultat pas encore publié</div>"
-    return (f"<div class='{cls}'><div class='top'><span class='nm'>{esc(s['label'])}</span>{state}</div>"
-            f"<div class='meta'>{esc(' · '.join(meta))}</div>{body}</div>")
+        body = "<div class='wt note'>Résultat pas encore publié</div>"
+    return (f"<div class='{cls}'><div class='top'><span class='t'>{hm(s['utc'], zone)}</span>"
+            f"<span class='nm'>{esc(s['label'])}<small>{esc(' · '.join(sub))}</small></span><span class='st'>{state}</span></div>"
+            f"{body}</div>")
 
 
-def gp_header(ev, sess_list, zone, kicker="", extra=""):
-    state = ev_state(ev, sess_list)
+def timeline(ev, sess, res, zone, fav, show_idx, stakes):
+    """Le week-end en 3 colonnes : vendredi, samedi, dimanche."""
+    grid = grid_of(res)
+    days = {}
+    for s in sess:
+        days.setdefault(s["utc"].astimezone(zone).date(), []).append(s)
+    today = now_utc().astimezone(zone).date()
+    cols = []
+    for d in sorted(days):
+        tiles = "".join(session_tile(ev, s, res.get(s["code"]) or [], zone, fav, show_idx, stakes,
+                                     grid if s["code"] in ("SPR", "RAC") else None) for s in days[d])
+        cls = "dh today" if d == today else "dh"
+        cols.append(f"<div class='day'><div class='{cls}'>{JOURS[d.weekday()]}<span>{day_num(d)} {MOIS[d.month - 1]}</span></div>{tiles}</div>")
+    n = len(cols)
+    return f"<div class='tl' style='grid-template-columns:repeat({max(1, min(n, 3))}, 1fr)'>{''.join(cols)}</div>" if cols else ""
+
+
+def gp_hero(ev, sess, zone, nev=None, total=22):
+    """Grand en-tête : photo du GP, nom en grand, drapeau, tracé du circuit, chiffres du circuit, compte à rebours."""
+    m = event_meta(ev)
+    state = ev_state(ev, sess)
     pill = {"pre": "<span class='pill pre'>À venir</span>", "live": "<span class='pill live'>● Week-end en cours</span>",
             "post": "<span class='pill post'>✓ Terminé</span>"}[state]
-    vids = video_buttons(ev, sess_list)
-    vids = f"<div class='vids'>{vids}</div>" if vids else ""
-    return (f"<div class='gph'><span class='fl0'>{flag(ev['iso'])}</span><div class='k'>{esc(kicker or 'Manche ' + str(ev['round']))}</div>"
-            f"<h1>{esc(ev['name'])}</h1><div class='sub'>{esc(ev['circuit'])} · {esc(fr_range(ev['start'], ev['end']))} &nbsp;{pill}</div>"
-            f"{extra}{vids}</div>")
+    nxt = next((s for s in sess if not session_done(s) and s["utc"] and s["utc"] > now_utc() - timedelta(minutes=50)), None)
+    cd = ""
+    if nxt and state != "post":
+        if session_live(nxt):
+            cd = f"<span class='hcd'><span>●</span> {esc(nxt['label'])} en cours</span>"
+        else:
+            cd = f"<span class='hcd'>{esc(nxt['label'])} <span>{countdown(nxt['utc'])}</span></span>"
+    name = gp_full(ev)
+    parts = name.split(" ", 2)
+    title = f"{esc(' '.join(parts[:2]))}<em>{esc(parts[2] if len(parts) > 2 else '')}</em>"
+    flag_img = f"<img src='{esc(m['flag'])}' alt=''>" if m.get("flag") else flag(ev["iso"])
+    city = m.get("city") or ev["place"]
+    trk = f"<div class='hero-r'><img src='{esc(m['track'])}' alt='Tracé du circuit'></div>" if m.get("track") else ""
+    laps = (m.get("laps") or {}).get("MGP") or {}
+    stats = []
+    if m.get("km"):
+        stats.append((f"{fr_num(m['km'], 2)}<small> km</small>", "Longueur"))
+    if m.get("left") is not None and m.get("right") is not None:
+        lc, rc = int(float(m["left"])), int(float(m["right"]))
+        stats.append((f"{lc + rc}<small> · {lc} G / {rc} D</small>", "Virages"))
+    if m.get("straight"):
+        stats.append((f"{int(float(m['straight'])):,}".replace(",", " ") + "<small> m</small>", "Plus longue ligne droite"))
+    if laps.get("laps"):
+        stats.append((f"{laps['laps']}<small>{' · sprint ' + str(laps['sprint']) if laps.get('sprint') else ''}</small>", "Tours"))
+    if laps.get("km"):
+        stats.append((f"{fr_num(laps['km'], 1)}<small> km</small>", "Distance de course"))
+    elif m.get("built"):
+        stats.append((str(m["built"]), "Construit en"))
+    hs = "".join(f"<div><b>{v}</b><span>{esc(l)}</span></div>" for v, l in stats[:5])
+    hs = f"<div class='hstats' style='grid-template-columns:repeat({len(stats[:5])}, 1fr)'>{hs}</div>" if hs else ""
+    bg = m.get("bg") or m.get("top") or ""
+    return (f"<div class='hero'><div class='hero-bg' style=\"--img:url('{esc(bg)}')\"></div><div class='hero-in'><div class='hero-l'>"
+            f"<div class='rnd'>Manche <b>{ev['round']}</b><i>/ {total}</i></div>"
+            f"<div class='ctry'>{flag_img} {esc(city)} · {esc(m.get('country') or '')}</div><h1>{title}</h1>"
+            f"<div class='hsub'>{esc(ev['circuit'])} · {esc(fr_range(ev['start'], ev['end']))}</div>"
+            f"<div class='hstate'>{pill}{cd}</div></div>{trk}</div>{hs}<div class='kerb'></div></div>")
+
+
+REPLAYS = [("MotoGP", "RAC", "race", "Le Grand Prix"), ("MotoGP", "SPR", "sprint", "Le sprint"),
+           ("Moto2", "RAC", "race", "La course Moto2"), ("Moto3", "RAC", "race", "La course Moto3")]
+
+
+def replays_html(ev, wk, zone, pays):
+    """Les replays du GP : CANAL+ Sport d'abord (en français), la vidéo officielle MotoGP en second."""
+    m = event_meta(ev)
+    img = m.get("top") or m.get("bg") or ""
+    cards = []
+    for cat, code, kind, label in REPLAYS:
+        s = next((x for x in wk.get(cat) or [] if x["code"] == code), None)
+        if not s:
+            continue
+        if not session_done(s):
+            if cat == "MotoGP":
+                cards.append(f"<div class='rp off' style=\"--img:url('{esc(img)}')\"><span class='src'>Bientôt</span>"
+                             f"<small>{esc(cat)}</small><b>{esc(label)}</b><div class='alt'>{when_txt(s['utc'], zone)}</div></div>")
+            continue
+        canal = find_video(ev, "canal", kind, cat)
+        off = find_video(ev, "motogp", kind) if cat == "MotoGP" else None
+        first_canal = pays == "FR" or not off
+        if first_canal:
+            href = yt_url(canal) if canal else canal_search_url(ev, kind, cat)
+            cls, src = ("rp canal" if canal else "rp canal find"), "CANAL+ Sport"
+            mins = canal.get("mins") if canal else None
+            alt_link = yt_url(off) if off else (official_search_url(ev, kind) if cat == "MotoGP" else "")
+            alt = f"<div class='alt'>Version officielle : <a href='{alt_link}' target='_blank' rel='noopener'>MotoGP ›</a></div>" if alt_link else ""
+        else:
+            href, cls, src, mins = yt_url(off), "rp motogp", "MotoGP™", off.get("mins")
+            alt_link = yt_url(canal) if canal else canal_search_url(ev, kind, cat)
+            alt = f"<div class='alt'>En français : <a href='{alt_link}' target='_blank' rel='noopener'>CANAL+ ›</a></div>"
+        dur = f"<span class='dur'>{mins} min</span>" if mins else ""
+        tip = "" if (canal if first_canal else off) else " title='Ouvre la recherche dans la chaîne : la vidéo sort en premier'"
+        cards.append(f"<div class='{cls}' style=\"--img:url('{esc(img)}')\"><a class='rpa' href='{esc(href)}' target='_blank' "
+                     f"rel='noopener'{tip}></a><span class='src'>{src}</span>{dur}<span class='play'></span>"
+                     f"<small>{esc(cat)} · résumé</small><b>{esc(label)}</b>{alt}</div>")
+    return f"<div class='rps'>{''.join(cards)}</div>" if cards else ""
 
 
 def grid_of(res):
@@ -1384,7 +1818,7 @@ def grid_of(res):
 
 
 # =========================================================================
-# LE WEEK-END EN BREF (faits, sans phrases creuses)
+# LE WEEK-END EN BREF
 # =========================================================================
 def weekend_facts(ev, ss, res, before, after, fav):
     facts = []
@@ -1444,29 +1878,28 @@ def moves_html(before, after, fav, n=8):
             ar = f"<span class='ar dn'>▼{t['rank'] - b}</span>"
         info = rider_of(t["rid"], t["row"])
         star = " style='color:var(--gold)'" if fav == t["rid"] else ""
-        out.append(f"<div class='mv'><span class='rk'>{t['rank']}</span>{ar}{num_badge(info)}<span{star}>"
-                   f"{rider_link(t['rid'], esc(info.get('name') or t['name']))}</span><span class='pt'>{t['pts']} pts</span></div>")
+        out.append(f"<div class='mv'><span class='rk'>{t['rank']}</span>{ar}{head(info, 28)}<span class='rn2'{star}>"
+                   f"{rider_link(t['rid'], esc(info.get('name') or t['name']))}</span><span class='pt'>{t['pts']}</span></div>")
     return "".join(out)
 
 
 def ours_html(ev, res_all, pays, fav):
-    """Les pilotes du pays (toutes catégories) sur le week-end."""
     out = []
     for cat, res in res_all.items():
         for code, label in (("SPR", "Sprint"), ("RAC", "Course")):
             for r in res.get(code) or []:
                 if r["iso"] == pays:
-                    pos = nth(r['pos']) if r["pos"] else status_fr(r).lower()
-                    out.append(f"<li>{flag(r['iso'])} <b>{rider_link(r['rid'], esc(r['name']))}</b> <span class='note'>({cat})</span> "
-                               f": {label.lower()} {pos}" + (f", {r['points']} pts" if r["points"] else "") + "</li>")
-    return f"<ul class='facts'>{''.join(out)}</ul>" if out else ""
+                    pos = nth(r["pos"]) if r["pos"] else status_fr(r).lower()
+                    info = rider_of(r["rid"], r)
+                    out.append(f"<div class='mv'>{head(info, 30)}<span class='rn2'>{rider_link(r['rid'], esc(r['name']))} "
+                               f"<span class='note'>{cat} · {label.lower()}</span></span><span class='pt'>{pos}</span></div>")
+    return "".join(out)
 
 
 # =========================================================================
 # PAGES
 # =========================================================================
 def pick_event(evs, code=None, ref=None):
-    """GP demandé, sinon le week-end en cours, sinon le dernier couru (les jours qui suivent), sinon le prochain."""
     if code:
         e = next((e for e in evs if e["code"] == code), None)
         if e:
@@ -1483,12 +1916,59 @@ def pick_event(evs, code=None, ref=None):
 
 
 def mark_seen(ev, sess_lists):
-    """Ouvrir un GP le marque comme vu (séances de qualifs, sprint et course déjà finies)."""
     ss = st.session_state
     keys = {seen_key(ev, s["group"]) for lst in sess_lists for s in lst if s["group"] and session_done(s)}
     if keys - ss.seen:
         ss.seen = ss.seen | keys
         write_seen(ss.seen)
+
+
+def reveal_toggle(key, ctx):
+    """« Tout dévoiler » : montre d'un coup tous les résultats de la page (rien n'est retenu d'une visite à l'autre)."""
+    if ctx["show_all"]:
+        return " all"
+    with st.container(key="tools"):
+        on = st.toggle("👁 Tout dévoiler sur cette page", key=key, help="Montre d'un coup tous les résultats cachés de la page.")
+    return " all" if on else ""
+
+
+def fav_band(ctx, sess, evs, cut):
+    ss = st.session_state
+    fav = ss.get("fav")
+    if not fav:
+        return ""
+    info = rider_of(fav)
+    me = next((t for t in ctx["table"] if t["rid"] == fav), None)
+    zone = ctx["zone"]
+    nxt = next((s for s in sess if not session_done(s) and s["utc"] and s["utc"] > now_utc()), None)
+    if nxt:
+        nxt_txt = f"Prochaine séance : {esc(nxt['label'])}, {when_txt(nxt['utc'], zone)}"
+    else:
+        nev = next((e for e in evs if e["start"] > now_utc().date()), None)
+        nxt_txt = f"Prochain GP : {esc(nev['name'])}, {esc(fr_range(nev['start'], nev['end']))}" if nev else "Saison terminée"
+    img = f"<div class='fi'><img src='{esc(info['photo'])}' alt=''></div>" if info.get("photo") else ""
+    nums = ""
+    if me:
+        nums = "".join(f"<div><b>{v}</b><span>{l}</span></div>" for v, l in
+                       ((nth(me["rank"]), "championnat"), (me["pts"], "points"), (me["wins"], "victoires"), (me["pod"], "podiums")))
+    note = " <span class='note'>(avant le dernier GP)</span>" if cut else ""
+    return (f"<div class='fav' data-n='{esc(info.get('num') or '')}' style='--c:{esc(info.get('color', '#444'))}'>{img}<div class='fb'>"
+            f"<div class='k'>⭐ Mon pilote{note}</div><div class='t'>{rider_link(fav, esc(info.get('name')))}</div>"
+            f"<div class='s'>{esc(info.get('team', ''))}</div><div class='nums'>{nums}</div><div class='s'>{nxt_txt}</div></div></div>")
+
+
+def next_gp_card(nev, ctx):
+    m = event_meta(nev)
+    sess = sessions(nev, ctx["cat_ids"]["MotoGP"])
+    key = [s for s in sess if s["code"] in ("Q2", "SPR", "RAC")]
+    tms = "".join(f"<div><span>{esc(s['short'])}</span><b>{when_txt(s['utc'], ctx['zone'])}</b></div>" for s in key)
+    img = m.get("bg") or m.get("top") or ""
+    trk = f"<img class='trk' src='{esc(m['track'])}' alt=''>" if m.get("track") else ""
+    first = sess[0]["utc"] if sess else None
+    cd = f"<div class='cd'>Premier tour de roue {countdown(first)}</div>" if first and first > now_utc() else ""
+    return (f"<a class='nx' href='#go?vue=gp&gp={nev['code']}' style=\"--img:url('{esc(img)}')\"><div class='k'>Le prochain GP · manche "
+            f"{nev['round']}</div><b>{flag(nev['iso'])} {esc(nev['name'])}</b><div class='s'>{esc(nev['circuit'])} · "
+            f"{esc(fr_range(nev['start'], nev['end']))}</div>{cd}<div class='tms'>{tms}</div>{trk}</a>")
 
 
 def brief_page(ctx):
@@ -1499,41 +1979,17 @@ def brief_page(ctx):
     wk = weekend(ev, cat_ids)
     sess = wk.get("MotoGP") or []
     res = {s["code"]: classification(s) for s in sess if (session_done(s) or session_live(s))}
-    state = ev_state(ev, sess)
-    results = ctx["results"]
-    cut = ctx["cut"]
-    allcls = " all" if ctx["show_all"] else ""
+    results, cut = ctx["results"], ctx["cut"]
 
-    head = gp_header(ev, sess, zone, kicker="Le brief · " + ("ce week-end" if state != "post" else "le dernier Grand Prix"))
-    parts = [head]
+    st.markdown(gp_hero(ev, sess, zone, total=len(evs)), unsafe_allow_html=True)
+    allcls = reveal_toggle("reveal_brief", ctx)
+    parts = [fav_band(ctx, sess, evs, cut)]
+    rp = replays_html(ev, wk, zone, ss.opts["pays"])
+    if rp:
+        parts.append(sec_title("Les replays", "Résumés CANAL+ Sport en français · version officielle MotoGP") + rp)
+    parts.append(sec_title("Le week-end", f"MotoGP · heures de {ctx['zone_name']}", gp_link(ev, "Moto2, Moto3 et classements complets ›"))
+                 + timeline(ev, sess, res, zone, fav, ss.opts["indice"], stakes_of(ctx["table"])))
 
-    # Mon pilote
-    if fav:
-        info = rider_of(fav)
-        table = ctx["table"]
-        me = next((t for t in table if t["rid"] == fav), None)
-        nxt = next((s for s in sess if not session_done(s) and s["utc"] and s["utc"] > now_utc()), None)
-        if not nxt:
-            nev = next((e for e in evs if e["start"] > now_utc().date()), None)
-            nxt_txt = f"Prochain GP : {esc(nev['name'])}, {esc(fr_range(nev['start'], nev['end']))}" if nev else "Saison terminée"
-        else:
-            nxt_txt = f"Prochaine séance : {esc(nxt['label'])}, {when_txt(nxt['utc'], zone)}"
-        rank = f"{nth(me['rank'])} au championnat · {me['pts']} pts" if me else "Pas encore de points"
-        parts.append(f"<div class='fav-band' style='--c:{esc(info.get('color', '#444'))}'>{photo(info, 58)}<div style='min-width:0'>"
-                     f"<div class='t'>⭐ {rider_link(fav, esc(info.get('name')))}</div><div class='s'>{esc(info.get('team', ''))} · {rank}"
-                     f"{'' if not cut else ' <span class=note>(avant le dernier GP)</span>'}</div>"
-                     f"<div class='s'>{nxt_txt}</div></div></div>")
-
-    # Séances du week-end
-    grid = grid_of(res)
-    tiles = [session_tile(ev, s, res.get(s["code"]) or [], zone, fav, ss.opts["indice"], stakes_of(ctx["table"]),
-                          grid if s["code"] in ("SPR", "RAC") else None) for s in sess]
-    if tiles:
-        parts.append(f"<div class='ses-grid'>{''.join(tiles)}</div>")
-    else:
-        parts.append("<p class='note'>Horaires pas encore publiés.</p>")
-
-    # Rubriques cachées
     cards = []
     if any(session_done(s) and s["group"] for s in sess):
         before = standings([x for x in results if x[0]["id"] != ev["id"]], set())
@@ -1544,42 +2000,29 @@ def brief_page(ctx):
                           f"<ul class='facts'>{''.join('<li>' + f + '</li>' for f in facts)}</ul>", ""))
         mv = moves_html(before, after, fav)
         if mv:
-            cards.append(("📈", "Ce qui a bougé au championnat", "Le top 8 du championnat après ce week-end.", mv, ""))
+            cards.append(("📈", "Le championnat", "Le top 8 après ce week-end, et qui a bougé.", mv, ""))
         rac = res.get("RAC") or res.get("SPR")
         if rac and any(r["pos"] == 1 for r in rac):
             label = "Le podium du Grand Prix" if res.get("RAC") else "Le podium du sprint"
-            cards.append(("🏆", label, "Les trois premiers, avec les photos.", podium_html(rac), "full"))
+            cards.append(("🏆", label, "Les trois premiers, sur la marche.", podium_html(rac), "full"))
         pays = ss.opts["pays"]
         ours = ours_html(ev, {c: {s["code"]: classification(s) for s in wk.get(c, []) if session_done(s) and s["code"] in ("SPR", "RAC")}
                               for c in CATS}, pays, fav)
-        title = COUNTRY_FR[pays][1]
         if ours:
-            cards.append((flag(pays), f"{title} du week-end", "MotoGP, Moto2, Moto3 : comment s'en sont sortis les nôtres ?", ours, "full"))
-    html_cards = []
-    for ico, title, tease, content, cls in cards:
-        html_cards.append(f"<div class='card {cls}'><span class='ico'>{ico}</span><h3>{esc(title)}</h3>"
-                          f"<div class='tease'>{esc(tease)}</div>{hidden('👁 Voir', content)}</div>")
-
-    # Actus (avec bouclier) et prochain GP
+            cards.append((flag(pays), f"{COUNTRY_FR[pays][1]} du week-end", "MotoGP, Moto2, Moto3 : comment s'en sont sortis les nôtres ?",
+                          ours, "full"))
+    if cards:
+        html_cards = "".join(f"<div class='card {cls}'><span class='ico'>{ico}</span><h3>{esc(title)}</h3>"
+                             f"<div class='tease'>{esc(tease)}</div>{hidden('Voir', content)}</div>"
+                             for ico, title, tease, content, cls in cards)
+        parts.append(sec_title("Ce qu'il faut savoir", "Caché tant que tu ne cliques pas") + f"<div class='bf-grid'>{html_cards}</div>")
     items = news(bucket(600))[:4]
     if items:
-        html_cards.append(f"<div class='card full'><span class='ico'>📰</span><h3>Les dernières actus</h3>"
-                          f"{news_html(items, ctx)}<div style='margin-top:8px'>{link('vue=actus', 'Toutes les actus ›')}</div></div>")
+        parts.append(sec_title("Les actus", "", link("vue=actus", "Toutes les actus ›")) + news_html(items, ctx))
     nev = next((e for e in evs if e["start"] > max(now_utc().date(), ev["end"])), None)
     if nev:
-        nsess = sessions(nev, cat_ids["MotoGP"])
-        key = [s for s in nsess if s["code"] in ("Q2", "SPR", "RAC")]
-        lines = "".join(f"<div class='mv'><b style='width:90px'>{esc(s['short'])}</b><span>{when_txt(s['utc'], zone)}</span></div>"
-                        for s in key)
-        if key and key[0].get("provisional"):
-            lines += "<div class='note'>Horaires provisoires (pas encore confirmés par MotoGP).</div>"
-        html_cards.append(f"<div class='card'><span class='ico'>{flag(nev['iso'])}</span><h3>Le prochain GP</h3>"
-                          f"<div class='tease'>{gp_link(nev, esc(nev['name']))} · {esc(nev['circuit'])} · "
-                          f"{esc(fr_range(nev['start'], nev['end']))}</div>{lines or '<span class=note>Horaires à venir</span>'}</div>")
-    parts.append(f"<div class='bf-grid{allcls}'>{''.join(html_cards)}</div>")
+        parts.append(sec_title("Et après") + next_gp_card(nev, ctx))
     st.markdown(f"<div class='bf{allcls}'>{''.join(parts)}</div>", unsafe_allow_html=True)
-    st.markdown(f"<div style='margin-top:10px'>{gp_link(ev, 'Tout le week-end, les 3 catégories et les classements complets ›')}</div>",
-                unsafe_allow_html=True)
 
 
 def gp_page(ctx):
@@ -1592,7 +2035,7 @@ def gp_page(ctx):
         if c1.button("‹", key="gp_prev", disabled=i == 0, use_container_width=True):
             ss.gp = evs[i - 1]["code"]
             st.rerun()
-        names = [f"{flag(e['iso'])} {e['round']}. {e['name']}" for e in evs]
+        names = [f"{flag(e['iso'])}  Manche {e['round']} · {e['name']} · {fr_range(e['start'], e['end'])}" for e in evs]
         pick = c2.selectbox("Grand Prix", names, index=i, label_visibility="collapsed", key=f"gp_sel_{ev['code']}")
         if names.index(pick) != i:
             ss.gp = evs[names.index(pick)]["code"]
@@ -1601,25 +2044,27 @@ def gp_page(ctx):
             ss.gp = evs[i + 1]["code"]
             st.rerun()
     cat_ids = ctx["cat_ids"]
+    wk = weekend(ev, cat_ids)
+    st.markdown(gp_hero(ev, wk.get("MotoGP") or [], zone, total=len(evs)), unsafe_allow_html=True)
+    if any(session_done(s) for lst in wk.values() for s in lst):
+        mark_seen(ev, list(wk.values()))
+    allcls = reveal_toggle(f"reveal_{ev['code']}", ctx)
+    rp = replays_html(ev, wk, zone, ss.opts["pays"])
+    if rp:
+        st.markdown(f"<div class='bf{allcls}'>{sec_title('Les replays', 'Résumés CANAL+ Sport en français · version officielle MotoGP')}{rp}</div>",
+                    unsafe_allow_html=True)
     cat = ss.get("cat", "MotoGP")
+    st.markdown(sec_title("Le week-end", f"heures de {ctx['zone_name']}"), unsafe_allow_html=True)
     cat = st.segmented_control("Catégorie", CATS, default=cat, key="cat_pick", label_visibility="collapsed") or cat
     ss.cat = cat
-    wk = weekend(ev, cat_ids)
     sess = wk.get(cat) or []
-    st.markdown(gp_header(ev, wk.get("MotoGP") or sess, zone), unsafe_allow_html=True)
-    if any(session_done(s) for s in sess):
-        mark_seen(ev, list(wk.values()))
     res = {s["code"]: classification(s) for s in sess if session_done(s) or session_live(s)}
     grid = grid_of(res)
-    allcls = " all" if ctx["show_all"] else ""
-    tiles = [session_tile(ev, s, res.get(s["code"]) or [], zone, fav, ss.opts["indice"], stakes_of(ctx["table"]),
-                          grid if s["code"] in ("SPR", "RAC") else None) for s in sess]
-    st.markdown(f"<div class='bf{allcls}'><div class='ses-grid'>{''.join(tiles)}</div></div>", unsafe_allow_html=True)
-
-    # Classements complets, séance par séance (cachés)
+    st.markdown(f"<div class='bf{allcls}'>{timeline(ev, sess, res, zone, fav, ss.opts['indice'], stakes_of(ctx['table']))}</div>",
+                unsafe_allow_html=True)
     done = [s for s in sess if (session_done(s) or session_live(s)) and res.get(s["code"])]
     if done:
-        page_head("Les classements complets", "Cliquer sur une séance pour la déplier.", "Résultats")
+        st.markdown(sec_title("Les classements complets", f"{cat} · une séance à la fois"), unsafe_allow_html=True)
         for s in reversed(done):
             rows = res[s["code"]]
             race = s["code"] in ("SPR", "RAC")
@@ -1630,51 +2075,55 @@ def gp_page(ctx):
                     ic, nm, tip = WATCH_LEVELS[lvl]
                     extra = f"<p class='note'>{ic} <b>{nm}</b> · {esc(tip)}</p>"
             content = (podium_html(rows) if race else "") + f"<div class='scroll'>{results_table(rows, s['code'], fav)}</div>"
-            with st.expander(f"{s['label']} · {when_txt(s['utc'], zone)}" + (" · ● en cours" if session_live(s) else "")):
-                st.markdown(f"<div class='bf{allcls}'>{extra}{hidden('👁 Voir le classement', content)}</div>", unsafe_allow_html=True)
+            with st.expander(f"{s['label']} · {when_txt(s['utc'], zone)}" + (" · ● en cours" if session_live(s) else ""),
+                             expanded=bool(allcls) and race):
+                st.markdown(f"<div class='bf{allcls}'>{extra}{hidden('Voir le classement', content)}</div>", unsafe_allow_html=True)
     rec = next((s for s in sess if s["code"] == "RAC"), None)
     if rec and session_done(rec):
-        recs = records(rec)
         lines = []
-        for r in recs:
+        for r in records(rec):
             who = esc(((r.get("rider") or {}).get("full_name")) or "")
             t = esc((r.get("bestLap") or {}).get("time") or "")
-            kind = {"bestLap": "Record de la piste", "poleLap": "Record de pole", "fastestLap": "Meilleur tour en course"}.get(r.get("type"), "")
-            if kind and who and r.get("type") != "fastestLap":
-                lines.append(f"<li>{kind} : {t} ({who}, {r.get('year', '')})</li>")
+            kind = {"bestLap": "Record de la piste", "poleLap": "Record de pole"}.get(r.get("type"), "")
+            if kind and who:
+                yr = f" ({r['year']})" if r.get("year") else ""
+                lines.append(f"<li>📏 {kind} : <b>{t}</b> · {who}{yr}</li>")
         if lines:
-            st.markdown(f"<div class='card' style='margin-top:12px'><h3>📏 Records du circuit</h3><ul class='facts'>{''.join(lines)}</ul></div>",
+            st.markdown(sec_title("Records du circuit", cat) + f"<div class='card'><ul class='facts'>{''.join(lines)}</ul></div>",
                         unsafe_allow_html=True)
 
 
 def calendar_page(ctx):
     evs, zone = ctx["evs"], ctx["zone"]
     today = now_utc().date()
-    page_head(f"Calendrier {ctx['year']}", f"{len(evs)} Grands Prix · heures de {ctx['zone_name']}", "La saison")
     nxt = next((e for e in evs if e["end"] >= today), None)
+    st.markdown(sec_title(f"La saison {ctx['year']}", f"{len(evs)} Grands Prix · clique sur un GP pour l'ouvrir"), unsafe_allow_html=True)
     out = []
     for e in evs:
+        m = event_meta(e)
         if e["start"] <= today <= e["end"]:
-            cls, st_ = "c live", "<span class='pill live'>● En cours</span>"
+            cls, stt = "cc live", "<span class='pill live'>● En cours</span>"
         elif e["end"] < today:
-            cls, st_ = "c done", "<span class='pill post'>✓ Couru</span>"
+            cls, stt = "cc done", "<span class='pill post'>✓ Couru</span>"
+        elif e is nxt:
+            cls, stt = "cc next", f"<span class='pill pre'>{countdown(datetime.combine(e['start'], datetime.min.time()).replace(tzinfo=timezone.utc))}</span>"
         else:
-            cls, st_ = ("c next" if e is nxt else "c"), ""
-        days = (e["start"] - today).days
-        when = f" · dans {days} j" if e is nxt and days > 0 else ""
-        out.append(f"<a class='{cls}' href='#go?vue=gp&gp={e['code']}'><span class='r'>{e['round']}</span><span class='f'>{flag(e['iso'])}</span>"
-                   f"<span class='t'><b>{esc(e['name'])}</b><span>{esc(fr_range(e['start'], e['end']))}{when} · {esc(e['circuit'])}</span>"
-                   f"{st_}</span></a>")
+            cls, stt = "cc", ""
+        fl = f"<img src='{esc(m['flag'])}' alt=''>" if m.get("flag") else flag(e["iso"])
+        trk = f"<img class='trk' src='{esc(m['track'])}' alt=''>" if m.get("track") else ""
+        img = m.get("top") or m.get("bg") or ""
+        out.append(f"<a class='{cls}' href='#go?vue=gp&gp={e['code']}' style=\"--img:url('{esc(img)}')\"><span class='r'>{e['round']}</span>"
+                   f"<span class='stt'>{stt}</span>{trk}<div class='b'><div class='f'>{fl} {esc(fr_range(e['start'], e['end']))}</div>"
+                   f"<b>{esc(e['name'])}</b><span class='c'>{esc(e['circuit'])}</span></div></a>")
     st.markdown(f"<div class='cal'>{''.join(out)}</div>", unsafe_allow_html=True)
-    # Horaires du prochain GP
     if nxt:
         sess = sessions(nxt, ctx["cat_ids"]["MotoGP"])
         if sess:
-            page_head(f"Les horaires du {nxt['name']}", f"MotoGP · heures de {ctx['zone_name']}", "Le prochain week-end")
-            rows = "".join(f"<tr><td class='l'><b>{esc(s['label'])}</b></td><td class='l'>{when_txt(s['utc'], zone)}</td></tr>" for s in sess)
-            if sess[0].get("provisional"):
-                rows += "<tr><td class='l note' colspan='2'>Horaires provisoires (pas encore confirmés par MotoGP).</td></tr>"
-            st.markdown(f"<table class='std'>{rows}</table>", unsafe_allow_html=True)
+            st.markdown(sec_title(f"Les horaires du {nxt['name']}", f"MotoGP · heures de {ctx['zone_name']}"), unsafe_allow_html=True)
+            rows = "".join(f"<tr class='{'race' if s['code'] in ('SPR', 'RAC') else ''}'><td class='n'>{esc(s['label'])}</td>"
+                           f"<td>{when_txt(s['utc'], zone)}</td><td class='note'>{countdown(s['utc']) if s['utc'] > now_utc() else ''}</td></tr>"
+                           for s in sess)
+            st.markdown(f"<div class='card'><table class='times'>{rows}</table></div>", unsafe_allow_html=True)
             st.download_button("📅 Ajouter les séances à mon agenda", ics_calendar(nxt, sess), file_name=f"motogp_{nxt['code']}.ics",
                                mime="text/calendar", key="ics")
 
@@ -1684,7 +2133,7 @@ def ics_calendar(ev, sess):
     for s in sess:
         if not s["utc"]:
             continue
-        dur = 45 if s["code"] in ("SPR", "Q1", "Q2", "WUP") else 60 if s["code"] in ("FP1", "FP2", "PR") else 60
+        dur = 45 if s["code"] in ("SPR", "Q1", "Q2", "WUP") else 60
         a = s["utc"].astimezone(timezone.utc)
         b = a + timedelta(minutes=dur)
         lines += ["BEGIN:VEVENT", f"UID:{s['id']}@badabing-motogp", f"DTSTAMP:{a:%Y%m%dT%H%M%SZ}", f"DTSTART:{a:%Y%m%dT%H%M%SZ}",
@@ -1699,7 +2148,7 @@ def cut_note(cut, ctx):
     ev = next((e for e, ss, r in ctx["results"] if any(seen_key(e, s["group"]) in cut for s in ss if s["group"])), None)
     parts = [GROUP_FR[g] for g in "qsr" if any(k.endswith(g) for k in cut)]
     what = " et ".join([", ".join(parts[:-1]), parts[-1]]) if len(parts) > 1 else parts[0]
-    return f"Sans spoil : classement arrêté avant {what} du {ev['name'] if ev else 'dernier GP'} (pas encore ouvert sur cet appareil)."
+    return f"Sans spoil : arrêté avant {what} du {ev['name'] if ev else 'dernier GP'} (pas encore ouvert sur cet appareil)."
 
 
 def standings_page(ctx):
@@ -1717,39 +2166,51 @@ def standings_page(ctx):
                 cut = set()
     kind = st.segmented_control("Classement", ["Pilotes", "Équipes", "Constructeurs"], default="Pilotes", key="std_kind",
                                 label_visibility="collapsed") or "Pilotes"
-    page_head(f"Championnat {cat} {ctx['year']} · {kind.lower()}", cut_note(cut, ctx), "Classement")
+    st.markdown(sec_title(f"Championnat {cat} {ctx['year']}", esc(cut_note(cut, ctx)) or kind), unsafe_allow_html=True)
     fav = ss.get("fav")
     if kind == "Pilotes":
         table = standings(results, cut)
-        evs_done = [ev["code"] for ev, ss_, r in results if r.get("RAC") and any(s["code"] == "RAC" and session_done(s)
-                                                                                    and seen_key(ev, "r") not in cut for s in ss_)]
-        head = ("<tr><th class='rk'>#</th><th class='l'>Pilote</th><th>Pts</th><th>Écart</th><th>Vict.</th><th>Podiums</th>"
-                "<th>Sprints</th><th>Poles</th><th class='l'>3 derniers GP</th></tr>")
+        top = []
+        for t in table[:3]:
+            info = rider_of(t["rid"], t["row"])
+            img = f"<img src='{esc(info['photo'])}' alt=''>" if info.get("photo") else ""
+            gap = f" <small>· -{t['gap']}</small>" if t["gap"] else ""
+            top.append(f"<div class='t3 r{t['rank']}' data-n='{esc(info.get('num') or '')}' style='--c:{esc(color_of(t['rid'], t['row']))}'>"
+                       f"{img}<div class='b'><div class='p'>{t['rank']}</div><div class='n'>{rider_link(t['rid'], esc(short_name(info, t['row'])))}</div>"
+                       f"<div class='tm'>{flag(t['iso'])} {esc(t['team'])}</div><div class='pts'>{t['pts']} <small>pts</small>{gap}</div></div></div>")
+        st.markdown(f"<div class='top3'>{''.join(top)}</div>", unsafe_allow_html=True)
+        lead = max(table[0]["pts"], 1) if table else 1
+        head_ = ("<tr><th class='rk'>#</th><th class='l'>Pilote</th><th>Pts</th><th>Écart</th><th>Vict.</th><th>Podiums</th>"
+                 "<th>Sprints</th><th>Poles</th><th class='l'>3 derniers GP</th></tr>")
         rows = []
         for t in table:
             last = []
             for code, p in t["last"][-3:]:
                 c = "w" if p == 1 else "pd" if p and p <= 3 else "x" if not p else ""
                 last.append(f"<span class='lp {c}' title='{esc(GP.get(code, (code,))[0])}'>{p or 'ab'}</span>")
+            col = esc(color_of(t["rid"], t["row"]))
             rows.append(f"<tr class='{'fav' if t['rid'] == fav else ''}'><td class='rk'>{t['rank']}</td>"
-                        f"<td class='l'>{rider_cell(t['row'])}</td><td class='pts'>{t['pts']}</td>"
+                        f"<td class='l'>{rider_cell(t['row'])}</td><td class='pts' style='--c:{col}'>{t['pts']}"
+                        f"<span class='bar' style='width:{max(4, round(100 * t['pts'] / lead))}%'></span></td>"
                         f"<td>{'–' if not t['gap'] else '-' + str(t['gap'])}</td><td>{t['wins']}</td><td>{t['pod']}</td>"
                         f"<td>{t['swins']}</td><td>{t['poles']}</td><td class='l'>{''.join(last)}</td></tr>")
-        st.markdown(f"<div class='scroll'><table class='std'>{head}{''.join(rows)}</table></div>", unsafe_allow_html=True)
-        st.caption(f"{len(evs_done)} Grands Prix comptés. Sprint (MotoGP) et course comptent ; « Sprints » = victoires en sprint.")
+        st.markdown(f"<div class='card scroll'><table class='std'>{head_}{''.join(rows)}</table></div>", unsafe_allow_html=True)
+        st.caption("Sprint (MotoGP) et course comptent · « Sprints » = victoires en sprint.")
     else:
         table = team_standings(results, cut, "team" if kind == "Équipes" else "maker")
+        lead = max(table[0]["pts"], 1) if table else 1
         rows = "".join(f"<tr><td class='rk'>{t['rank']}</td><td class='l'><b>{esc(t['name'])}</b>"
                        f"{'' if kind == 'Constructeurs' else ' <span class=note>' + esc(t['maker']) + '</span>'}</td>"
-                       f"<td class='pts'>{t['pts']}</td><td>{'–' if not t['gap'] else '-' + str(t['gap'])}</td></tr>" for t in table)
-        st.markdown(f"<table class='std'><tr><th class='rk'>#</th><th class='l'>{kind[:-1]}</th><th>Pts</th><th>Écart</th></tr>{rows}</table>",
-                    unsafe_allow_html=True)
+                       f"<td class='pts' style='--c:{MAKER_COLOR.get(t['maker'], '#e10600')}'>{t['pts']}"
+                       f"<span class='bar' style='width:{max(4, round(100 * t['pts'] / lead))}%'></span></td>"
+                       f"<td>{'–' if not t['gap'] else '-' + str(t['gap'])}</td></tr>" for t in table)
+        st.markdown(f"<div class='card'><table class='std'><tr><th class='rk'>#</th><th class='l'>{kind[:-1]}</th><th>Pts</th>"
+                    f"<th>Écart</th></tr>{rows}</table></div>", unsafe_allow_html=True)
         if kind == "Constructeurs":
             st.caption("Constructeurs : seul le meilleur pilote de chaque marque marque des points à chaque sprint et course.")
 
 
 def rider_results(results, rid, cut):
-    """Résultats GP par GP d'un pilote : [(ev, qualif, sprint, course, points)]."""
     out = []
     for ev, ss, res in results:
         grid = grid_of(res) if seen_key(ev, "q") not in cut else []
@@ -1773,29 +2234,32 @@ def rider_results(results, rid, cut):
     return out
 
 
-def pos_svg(rows):
-    """Courbe des places en course, GP après GP (1 en haut)."""
+def pos_svg(rows, color="#e10600"):
+    """Courbe des places en course, GP après GP (1 en haut), avec aire dégradée."""
     pts = [(i, r[3]["pos"]) for i, r in enumerate(rows) if r[3]]
     if len(pts) < 2:
         return ""
-    w, h, n = 640, 150, max(len(rows) - 1, 1)
-    X = lambda i: 20 + i * (w - 40) / n
-    Y = lambda p: 14 + (min(p or 25, 25) - 1) * (h - 28) / 24
-    path, dots = [], []
-    for i, p in pts:
-        path.append(f"{X(i):.0f},{Y(p):.0f}")
+    w, h, n = 760, 190, max(len(rows) - 1, 1)
+    X = lambda i: 34 + i * (w - 54) / n
+    Y = lambda p: 16 + (min(p or 25, 25) - 1) * (h - 40) / 24
+    line = " ".join(f"{X(i):.0f},{Y(p):.0f}" for i, p in pts)
+    area = f"{X(pts[0][0]):.0f},{h - 22} " + line + f" {X(pts[-1][0]):.0f},{h - 22}"
+    dots, labels = [], []
     for i, r in enumerate(rows):
+        labels.append(f"<text x='{X(i):.0f}' y='{h - 6}' fill='#6f7787' font-size='10' text-anchor='middle'>{esc(r[0]['code'])}</text>")
         rc = r[3]
         if not rc:
             continue
         p = rc["pos"]
-        col = "#f5c542" if p == 1 else "#cfd5df" if p and p <= 3 else "#ff6b6b" if not p else "#8a93a3"
-        dots.append(f"<circle cx='{X(i):.0f}' cy='{Y(p):.0f}' r='5' fill='{col}'><title>{esc(r[0]['name'])} : "
-                    f"{nth(p) if p else 'abandon'}</title></circle>")
-    grid = "".join(f"<line x1='20' x2='{w - 20}' y1='{Y(p):.0f}' y2='{Y(p):.0f}' stroke='#262c38'/>"
-                   f"<text x='2' y='{Y(p) + 4:.0f}' fill='#7a8394' font-size='10'>{p}</text>" for p in (1, 5, 10, 15, 20))
-    return (f"<svg viewBox='0 0 {w} {h}' width='100%' style='max-width:{w}px'>{grid}"
-            f"<polyline points='{' '.join(path)}' fill='none' stroke='#e10600' stroke-width='2'/>{''.join(dots)}</svg>")
+        col = "#f3c34e" if p == 1 else "#d9dee6" if p and p <= 3 else "#ff3b30" if not p else "#9aa3b2"
+        dots.append(f"<circle cx='{X(i):.0f}' cy='{Y(p):.0f}' r='{6 if p and p <= 3 else 4.5}' fill='{col}' stroke='#06070a' stroke-width='2'>"
+                    f"<title>{esc(r[0]['name'])} : {nth(p) if p else 'abandon'}</title></circle>")
+    grid = "".join(f"<line x1='30' x2='{w - 14}' y1='{Y(p):.0f}' y2='{Y(p):.0f}' stroke='rgba(255,255,255,.06)'/>"
+                   f"<text x='4' y='{Y(p) + 4:.0f}' fill='#6f7787' font-size='10'>{nth(p)}</text>" for p in (1, 5, 10, 15, 20))
+    return (f"<div class='card'><svg viewBox='0 0 {w} {h}' width='100%'><defs><linearGradient id='ga' x1='0' y1='0' x2='0' y2='1'>"
+            f"<stop offset='0' stop-color='{color}' stop-opacity='.45'/><stop offset='1' stop-color='{color}' stop-opacity='0'/></linearGradient></defs>"
+            f"{grid}<polygon points='{area}' fill='url(#ga)'/><polyline points='{line}' fill='none' stroke='{color}' stroke-width='2.5' "
+            f"stroke-linejoin='round'/>{''.join(dots)}{''.join(labels)}</svg></div>")
 
 
 def rider_page(ctx, rid):
@@ -1818,8 +2282,8 @@ def rider_page(ctx, rid):
     age = f"{info['age']} ans · " if info.get("age") else ""
     born = f"né à {esc(info.get('city'))} ({esc(info.get('country'))})" if info.get("city") else esc(info.get("country", ""))
     img = f"<img src='{esc(info['photo'])}' alt=''>" if info.get("photo") else ""
-    st.markdown(f"<div class='rhead' style='--c:{esc(info.get('color', '#444'))}'>{img}<div class='i'>"
-                f"<div class='num'>#{esc(info.get('num') or '')}</div><h1>{flag(info.get('iso'))} {esc(info.get('name'))}</h1>"
+    st.markdown(f"<div class='rhead' data-n='{esc(info.get('num') or '')}' style='--c:{esc(info.get('color', '#444'))}'>{img}<div class='i'>"
+                f"<div class='fn'>{flag(info.get('iso'))} {esc(info.get('first'))}</div><h1>{esc(info.get('last') or info.get('name'))}</h1>"
                 f"<div class='s'>{esc(info.get('team', ''))} · {esc(info.get('maker', ''))} · {cat}</div>"
                 f"<div class='s'>{age}{born}{' · en Grand Prix depuis ' + str(info['start']) if info.get('start') else ''}</div></div></div>",
                 unsafe_allow_html=True)
@@ -1827,30 +2291,28 @@ def rider_page(ctx, rid):
         st.markdown(f"<p class='note'>{esc(cut_note(cut, ctx))}</p>", unsafe_allow_html=True)
     rows = rider_results(results, rid, cut)
     if me:
-        tiles = [(nth(me['rank']), "au championnat"), (me["pts"], "points"), (me["wins"], "victoires"), (me["pod"], "podiums"),
-                 (me["swins"], "sprints gagnés"), (me["poles"], "poles"), (me["best"] or "–", "meilleur résultat"), (me["dnf"], "abandons")]
+        tiles = [(nth(me["rank"]), "au championnat"), (me["pts"], "points"), (me["wins"], "victoires"), (me["pod"], "podiums"),
+                 (me["swins"], "sprints gagnés"), (me["poles"], "poles"), (nth(me["best"]) if me["best"] else "–", "meilleur résultat"),
+                 (me["dnf"], "abandons")]
         st.markdown("<div class='tiles'>" + "".join(f"<div class='tile'><b>{v}</b><span>{esc(l)}</span></div>" for v, l in tiles) + "</div>",
                     unsafe_allow_html=True)
-    svg = pos_svg(rows)
+    svg = pos_svg(rows, info.get("color") or "#e10600")
     if svg:
-        page_head("Place en course, GP après GP", "", "La saison")
-        st.markdown(svg, unsafe_allow_html=True)
+        st.markdown(sec_title("Sa saison", "Place à l'arrivée de chaque Grand Prix") + svg, unsafe_allow_html=True)
     if rows:
-        page_head("Résultats", "Grille · sprint · course · points", "GP par GP")
         def cell(r):
             if not r:
                 return "–"
-            return nth(r['pos']) if r["pos"] else "ab."
+            return nth(r["pos"]) if r["pos"] else "<span style='color:var(--red2)'>ab.</span>"
         trs = "".join(f"<tr><td class='l'>{flag(ev['iso'])} {gp_link(ev, esc(ev['name']))}</td><td>{nth(q) if q else '–'}</td>"
                       f"<td>{cell(sp)}</td><td>{cell(rc)}</td><td class='pts'>{pts}</td></tr>" for ev, q, sp, rc, pts in reversed(rows))
-        st.markdown(f"<div class='scroll'><table class='std'><tr><th class='l'>Grand Prix</th><th>Grille</th><th>Sprint</th>"
-                    f"<th>Course</th><th>Pts</th></tr>{trs}</table></div>", unsafe_allow_html=True)
-    # Actus du pilote
+        st.markdown(sec_title("GP par GP", "Grille · sprint · course · points") + f"<div class='card scroll'><table class='std'><tr>"
+                    f"<th class='l'>Grand Prix</th><th>Grille</th><th>Sprint</th><th>Course</th><th>Pts</th></tr>{trs}</table></div>",
+                    unsafe_allow_html=True)
     last = norm(info.get("last", ""))
     items = [n for n in news(bucket(600)) if last and len(last) > 2 and last in norm(n["title"] + " " + n["desc"])][:6]
     if items:
-        page_head(f"Les actus de {info.get('name')}", "", "Actus")
-        st.markdown(news_html(items, ctx), unsafe_allow_html=True)
+        st.markdown(sec_title(f"Les actus de {info.get('name')}") + news_html(items, ctx), unsafe_allow_html=True)
 
 
 def riders_page(ctx):
@@ -1864,25 +2326,26 @@ def riders_page(ctx):
     riders = [r for r in ctx["riders"].values() if r.get("cat") == cat and r.get("in_grid", True)]
     order = {t["rid"]: t["rank"] for t in (ctx["table"] if cat == "MotoGP" else [])}
     riders.sort(key=lambda r: (order.get(r["id"], 99), r.get("team", ""), r.get("last", "")))
-    page_head(f"Les pilotes {cat} {ctx['year']}", "Cliquer sur un pilote pour sa fiche · ⭐ = mon pilote", "Pilotes")
+    st.markdown(sec_title(f"La grille {cat} {ctx['year']}", "Clique sur un pilote pour sa fiche · ⭐ = mon pilote"), unsafe_allow_html=True)
     pays = ss.opts["pays"]
     tiles = []
     for r in riders:
         star = "⭐ " if ss.get("fav") == r["id"] else ""
-        img = f"<img src='{esc(r['photo'])}' loading='lazy' alt=''>" if r.get("photo") else "<div style='height:150px'></div>"
+        img = f"<img src='{esc(r['photo'])}' loading='lazy' alt=''>" if r.get("photo") else ""
+        rk = f"<span class='rk'>{nth(order[r['id']])}</span>" if r["id"] in order else ""
         tiles.append(f"<a class='rt' href='#go?vue=pilotes&pilote={r['id']}' style='--c:{esc(r.get('color', '#444'))}'>"
-                     f"<span class='n'>{esc(r.get('num') or '')}</span>{img}<b>{star}{flag(r['iso'])} {esc(r.get('name'))}</b>"
-                     f"<span>{esc(r.get('team', ''))}</span></a>")
+                     f"<span class='n'>{esc(r.get('num') or '')}</span>{rk}{img}<div class='b'><small>{star}{flag(r['iso'])} {esc(r.get('first'))}</small>"
+                     f"<b>{esc(r.get('last') or r.get('name'))}</b><span>{esc(r.get('team', ''))}</span></div></a>")
     if not tiles:
         st.info("Liste des pilotes indisponible pour le moment.")
     st.markdown(f"<div class='rg'>{''.join(tiles)}</div>", unsafe_allow_html=True)
     ours = [r for r in ctx["riders"].values() if r.get("iso") == pays]
     if ours:
-        page_head(f"{COUNTRY_FR[pays][1]} en Grand Prix", "Toutes catégories", flag(pays))
-        st.markdown("<ul class='facts'>" + "".join(
-            f"<li>{flag(pays)} {link('vue=pilotes&pilote=' + r['id'], '<b>' + esc(r['name']) + '</b>', 'rl')} · {esc(r.get('cat'))} · "
-            f"{esc(r.get('team'))}</li>" for r in sorted(ours, key=lambda r: CATS.index(r.get("cat", "MotoGP")))) + "</ul>",
-            unsafe_allow_html=True)
+        lines = "".join(f"<div class='mv'>{head(r, 34)}<span class='rn2'>{link('vue=pilotes&pilote=' + r['id'], esc(r['name']), 'rl')}</span>"
+                        f"<span class='note' style='margin-left:auto'>{esc(r.get('cat'))} · {esc(r.get('team'))}</span></div>"
+                        for r in sorted(ours, key=lambda r: CATS.index(r.get("cat", "MotoGP"))))
+        st.markdown(sec_title(f"{COUNTRY_FR[pays][1]} en Grand Prix", "Toutes catégories") + f"<div class='card'>{lines}</div>",
+                    unsafe_allow_html=True)
 
 
 def news_html(items, ctx):
@@ -1891,15 +2354,15 @@ def news_html(items, ctx):
     for n in items:
         pub = parse_dt(n["pub"])
         when = rel_time(pub) if pub else ""
-        img = f"<img src='{esc(n['img'])}' loading='lazy' alt=''>" if n.get("img") else ""
+        img = f"<div class='im' style=\"--img:url('{esc(n['img'])}')\"></div>" if n.get("img") else ""
         card = (f"<a class='nw' href='{esc(n['link'])}' target='_blank' rel='noopener'>{img}<div class='b'>"
-                f"<div class='t'>{esc(n['title'])}</div><div class='d'>{esc(n['desc'][:180])}</div>"
+                f"<div class='t'>{esc(n['title'])}</div><div class='d'>{esc(n['desc'][:170])}</div>"
                 f"<div class='m'>{esc(n['source'])} · {esc(when)}</div></div></a>")
         if spoil and pub and pub >= spoil[0]:
             i = uid("n")
             _, ev, s = spoil
-            out.append(f"<div class='nwx'><input type='checkbox' id='{i}' class='tg'><label for='{i}'>⚠️ Peut révéler un résultat"
-                       f"<small>publié après le début : {esc(s['label'])} du {esc(ev['name'])}</small><small>👁 Afficher</small></label>{card}</div>")
+            out.append(f"<div class='nwx'><input type='checkbox' id='{i}' class='tg'><label for='{i}'>⚠️ Peut spoiler"
+                       f"<small>publié après le début : {esc(s['label'])} · {esc(ev['name'])}</small><em>👁 Afficher</em></label>{card}</div>")
         else:
             out.append(card)
     return f"<div class='news'>{''.join(out)}</div>"
@@ -1908,13 +2371,13 @@ def news_html(items, ctx):
 def news_page(ctx):
     ss = st.session_state
     items = news(bucket(600))
-    page_head("Les actus MotoGP", "Motorsport.com France et Paddock GP · en français", "Actus")
+    st.markdown(sec_title("Les actus", "Motorsport.com France et Paddock GP · en français"), unsafe_allow_html=True)
     spoil = ctx["spoil_from"]
     if spoil:
         _, ev, s = spoil
         st.markdown(f"<div class='shield'>🛡️ <b>Bouclier anti-spoil</b> : les articles publiés après le début de "
-                    f"<b>{esc(s['label'].lower() if s['code'] != 'RAC' else 'la course')}</b> du {esc(ev['name'])} sont floutés tant que "
-                    f"tu n'as pas ouvert ce GP. Un clic sur un article l'affiche.</div>", unsafe_allow_html=True)
+                    f"<b>{esc(s['label'])}</b> du {esc(ev['name'])} sont floutés tant que tu n'as pas ouvert ce GP. "
+                    f"Un clic sur un article l'affiche.</div>", unsafe_allow_html=True)
     who = st.segmented_control("Filtre", ["Tout", "Mon pilote", "MotoGP", "Moto2 / Moto3"], default="Tout", key="news_f",
                                label_visibility="collapsed") or "Tout"
     if who == "Mon pilote":
@@ -1926,12 +2389,12 @@ def news_page(ctx):
         items = [n for n in items if not re.search(r"moto ?[23]\b", n["title"], re.I)]
     elif who == "Moto2 / Moto3":
         items = [n for n in items if re.search(r"moto ?[23]\b", n["title"] + " " + n["link"], re.I)]
+    allcls = " all" if ctx["show_all"] else ""
+    if spoil and not ctx["show_all"] and st.toggle("👁 Tout dévoiler (même les actus qui peuvent spoiler)", key="news_all"):
+        allcls = " all"
     if not items:
         st.markdown("<p class='note'>Aucune actu pour le moment.</p>", unsafe_allow_html=True)
         return
-    allcls = " all" if ctx["show_all"] else ""
-    if spoil and not ctx["show_all"] and st.toggle("👁 Afficher toutes les actus (même celles qui peuvent spoiler)", key="news_all"):
-        allcls = " all"
     st.markdown(f"<div class='{allcls}'>{news_html(items[:40], ctx)}</div>", unsafe_allow_html=True)
 
 
@@ -1952,7 +2415,7 @@ def settings_panel(ctx):
         ss.fav = pick or None
         set_cookie("gp_fav", pick or "")
     o = dict(ss.opts)
-    pays = st.radio("Pays (pour « nos pilotes »)", ["FR", "CA"], index=["FR", "CA"].index(o["pays"]), horizontal=True,
+    pays = st.radio("Pays (« nos pilotes », vidéos)", ["FR", "CA"], index=["FR", "CA"].index(o["pays"]), horizontal=True,
                     format_func=lambda x: "🇫🇷 France" if x == "FR" else "🇨🇦 Canada", key="set_pays")
     idx = st.toggle("Indice « à voir » des courses", value=o["indice"], key="set_idx")
     sc = st.toggle("Toujours montrer les résultats (pas de spoil caché)", value=o["scores"], key="set_sc")
@@ -2014,8 +2477,9 @@ def main():
     if not season:
         st.error("Le site officiel MotoGP ne répond pas. Réessaie dans quelques minutes.")
         return
-    evs = events(season["id"], bucket(600))
     cat_ids = categories(season["id"])
+    CAT_OF.update({v: k for k, v in cat_ids.items()})
+    evs = events(season["id"], bucket(600))
     if not evs or "MotoGP" not in cat_ids:
         st.error("Calendrier MotoGP indisponible pour le moment.")
         return
@@ -2028,17 +2492,17 @@ def main():
            "riders": riders, "results": results, "cut": cut, "show_all": show_all, "table": standings(results, cut),
            "spoil_from": spoil_since(results, ss.seen, show_all)}
 
-    # En-tête : marque + roue crantée
     hdr = st.container(key="hdr")
     h1, h2 = hdr.columns([10, 1])
-    h1.markdown("<div class='brand'>BADA BING <i>MOTOGP</i></div>", unsafe_allow_html=True)
+    h1.markdown("<div class='brand'><span class='lg'>Bada Bing <i>MotoGP</i></span><span class='sl'></span>"
+                "<small>sans spoil</small></div>", unsafe_allow_html=True)
     with h2.popover("⚙️", use_container_width=True):
         settings_panel(ctx)
 
     if not ss.hello_done:
         st.info("👋 Bienvenue ! Ici, **aucun résultat n'est montré sans ton accord** : chaque classement est caché derrière "
                 "« 👁 Voir », le championnat s'arrête avant le dernier GP tant que tu ne l'as pas ouvert, et les actus récentes "
-                "sont floutées. Choisis ton pilote dans ⚙️.")
+                "sont floutées. « 👁 Tout dévoiler » montre tout d'un coup. Choisis ton pilote dans ⚙️.")
         set_cookie("gp_hello", "1")
         ss.hello_done = True
 
@@ -2067,7 +2531,6 @@ def main():
      "pilotes": riders_page, "actus": news_page}[view](ctx)
 
     page_footer()
-    # Rechargement auto pendant une séance (MotoGP, Moto2 ou Moto3)
     ev = pick_event(evs)
     live = False
     if ev["start"] - timedelta(days=1) <= now_utc().date() <= ev["end"]:
