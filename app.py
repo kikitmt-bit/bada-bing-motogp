@@ -27,7 +27,7 @@ try:
 except Exception:  # pragma: no cover
     components = None
 
-APP_VERSION = "2026-11-m018"
+APP_VERSION = "2026-11-m019"
 HERE = os.path.dirname(os.path.abspath(__file__))
 CACHE_DIR = os.path.join(HERE, ".cache")
 log = logging.getLogger("motogp")
@@ -1988,9 +1988,10 @@ a.nw:hover {transform:translateY(-3px);}
 }
 @media (max-width: 700px) {
   /* --- barre d'onglets fixée en bas, comme une application --- */
-  .block-container {padding-bottom:70px !important; padding-top:1rem !important;}
-  .st-key-tabs {position:relative !important; top:auto !important; bottom:auto !important; z-index:5;
-    margin:4px 0 8px !important; padding:4px 2px !important; border-radius:12px; border:1px solid var(--line) !important; backdrop-filter:none !important;
+  .block-container {padding-bottom:70px !important; padding-top:calc(var(--tabtop, 56px) + 70px) !important;}
+  .st-key-tabs {position:fixed !important; top:var(--tabtop, 56px) !important; bottom:auto !important; left:0 !important; right:0 !important;
+    z-index:999; margin:0 !important; padding:4px 4px !important; border-bottom:1px solid var(--line) !important;
+    box-shadow:0 -160px 0 160px #06070a; background:#06070a !important; backdrop-filter:none !important;
     background:rgba(6,7,10,.97) !important; border-bottom:1px solid var(--line) !important;}
   .st-key-tabs [data-testid="stHorizontalBlock"] {flex-wrap:nowrap !important; gap:2px !important; overflow:visible;}
   .st-key-tabs [data-testid="stColumn"] {flex:1 1 0 !important; min-width:0 !important; width:auto !important;}
@@ -2990,6 +2991,13 @@ def diag_page(code, evs):
 def main():
     st.set_page_config(page_title="Bada Bing MotoGP", page_icon="🏍️", layout="wide", initial_sidebar_state="collapsed")
     st.markdown(CSS, unsafe_allow_html=True)
+    # Téléphone : hauteur de la barre d'onglets fixée en haut, sous la bande de Streamlit Cloud (réglable : ?barre=60)
+    try:
+        if st.query_params.get("barre"):
+            st.session_state.bar_top = max(0, min(160, int(st.query_params.get("barre"))))
+    except ValueError:
+        pass
+    st.markdown(f"<style>:root {{--tabtop:{st.session_state.get('bar_top', 56)}px;}}</style>", unsafe_allow_html=True)
     ss = st.session_state
     _UID[0] = 0
 
