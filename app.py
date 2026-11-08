@@ -27,7 +27,7 @@ try:
 except Exception:  # pragma: no cover
     components = None
 
-APP_VERSION = "2026-11-m012"
+APP_VERSION = "2026-11-m013"
 HERE = os.path.dirname(os.path.abspath(__file__))
 CACHE_DIR = os.path.join(HERE, ".cache")
 log = logging.getLogger("motogp")
@@ -927,7 +927,7 @@ def channel_uploads(channel, since_iso, _bucket=None):
         return []
     since = parse_dt(since_iso)
     out, token = [], None
-    for _ in range(12):
+    for _ in range(6):
         params = {"part": "snippet,contentDetails", "playlistId": "UU" + channel[2:], "maxResults": 50, "key": key}
         if token:
             params["pageToken"] = token
@@ -950,6 +950,33 @@ def channel_uploads(channel, since_iso, _bucket=None):
         token = payload.get("nextPageToken")
         if not token or not page or (since and all((parse_dt(v["published"]) or since) < since for v in page[-5:])):
             break
+    return out
+
+
+@st.cache_data(ttl=6 * 3600, show_spinner=False, max_entries=300)
+def api_search(channel, query, after_iso, before_iso):
+    """Recherche dans une chaîne par l'API YouTube (clé [youtube] api_key), limitée aux dates du GP : trouve les vidéos
+    anciennes que la liste des dernières mises en ligne n'atteint plus (Canal+ publie des dizaines de vidéos par jour).
+    100 unités de quota par recherche : appelée seulement pour un GP affiché dont la vidéo n'est pas encore connue."""
+    key = str(_secret("youtube", "api_key", ""))
+    if not key:
+        return []
+    params = {"part": "snippet", "channelId": channel, "q": query, "type": "video", "maxResults": 25, "order": "relevance",
+              "publishedAfter": after_iso, "publishedBefore": before_iso, "key": key}
+    try:
+        r = SESSION.get("https://www.googleapis.com/youtube/v3/search", params=params, timeout=12)
+    except Exception:
+        return []
+    if r.status_code != 200:
+        log.warning("Recherche API YouTube : HTTP %s", r.status_code)
+        return []
+    out = []
+    for item in r.json().get("items") or []:
+        vid = (item.get("id") or {}).get("videoId")
+        sn = item.get("snippet") or {}
+        if vid:
+            out.append({"id": vid, "title": html.unescape(sn.get("title", "")), "channel": channel, "mins": None,
+                        "published": sn.get("publishedAt", "")})
     return out
 
 
@@ -982,9 +1009,21 @@ def gp_full(ev):
     return ev["name"].replace("GP ", "Grand Prix ", 1)
 
 
+GP_FR_ALIAS = {"USA": ("ameriques", "etats-unis", "austin"), "CAT": ("catalogne", "barcelone"), "RSM": ("saint-marin", "misano"),
+               "NED": ("pays-bas", "assen"), "GBR": ("grande-bretagne", "silverstone"), "GER": ("allemagne", "sachsenring"),
+               "SPA": ("espagne", "jerez"), "ITA": ("italie", "mugello"), "AUT": ("autriche",), "JPN": ("japon", "motegi"),
+               "INA": ("indonesie", "mandalika"), "AUS": ("australie", "phillip island"), "MAL": ("malaisie", "sepang"),
+               "THA": ("thailande", "buriram"), "BRA": ("bresil", "goiania"), "CZE": ("tchequie", "republique tcheque", "brno"),
+               "HUN": ("hongrie", "balaton"), "ARA": ("aragon",), "POR": ("portugal", "portimao"), "VAL": ("valence", "valencia"),
+               "FRA": ("france", "le mans"), "QAT": ("qatar", "lusail")}
+
+
 def _canal_match(v, ev, kind, cat):
     t = norm(v["title"])
-    if "resume" not in t or str(ev["start"].year) not in t or fr_place(ev) not in t:
+    if "resume" not in t or str(ev["start"].year) not in t:
+        return False
+    places = {fr_place(ev)} | set(_gp_words(ev)) | set(GP_FR_ALIAS.get(ev["code"], ()))
+    if not any(p and p in t for p in places):
         return False
     if any(w in t for w in ("qualif", "essais", "warm", "practice")):
         return False
@@ -1032,9 +1071,16 @@ def find_video(ev, source, kind, cat="MotoGP"):
     recent = (now_utc().date() - ev["end"]).days <= 12  # la recherche sans clé n'est tentée que pour les GP récents
     channel = CANAL_CHANNEL if source == "canal" else MOTOGP_CHANNEL
     ok = (lambda v: _canal_match(v, ev, kind, cat)) if source == "canal" else (lambda v: _official_match(v, ev, kind))
-    pools = [lambda: channel_uploads(channel, (datetime.combine(ev["start"], datetime.min.time()) - timedelta(days=1)).replace(
-                 tzinfo=timezone.utc).isoformat(), bucket(1800)),
-             lambda: channel_feed(channel, bucket(900))]
+    start = datetime.combine(ev["start"], datetime.min.time()).replace(tzinfo=timezone.utc) - timedelta(days=1)
+    end = datetime.combine(ev["end"], datetime.min.time()).replace(tzinfo=timezone.utc) + timedelta(days=12)
+    iso = lambda d: d.strftime("%Y-%m-%dT%H:%M:%SZ")
+    pools = []
+    if recent:  # GP récent : les dernières mises en ligne suffisent (1 unité de quota par page)
+        pools.append(lambda: channel_uploads(channel, iso(start), bucket(1800)))
+    if source == "canal":  # sinon (et en secours) : recherche par l'API dans la chaîne, aux dates du GP
+        pools.append(lambda: api_search(channel, canal_query(ev, kind, cat), iso(start), iso(end)))
+        pools.append(lambda: api_search(channel, f"résumé {gp_full(ev)} {cat}", iso(start), iso(end)))
+    pools.append(lambda: channel_feed(channel, bucket(900)))
     if recent:
         if source == "canal":
             pools.append(lambda: channel_search(CANAL_CHANNEL, canal_query(ev, kind, cat)))

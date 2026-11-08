@@ -102,3 +102,9 @@ ce GP : sinon spoil). Plus de bande de chiffres en dessous. Téléphone : photo 
 3 bandeaux P1 · P2 · P3 (liseré or / argent / bronze) : fond sombre coupé en biais par la couleur de l'équipe, prénom + NOM,
 équipe, points + écart (« Leader » pour le 1er) ; à droite le pilote cadré tête + buste devant son numéro géant en contour.
 Lien vers la fiche du pilote. Téléphone : les 3 bandeaux empilés.
+
+## v-m013 : replays Canal+ de TOUS les GP
+Canal+ Sport publie des dizaines de vidéos par jour : la liste des dernières mises en ligne (`channel_uploads`, 6 pages = 300)
+n'atteint que les GP récents. Pour les autres : `api_search` (API YouTube search, channelId + dates du GP, 100 unités de quota,
+cache 6 h, appelée seulement pour un GP affiché dont la vidéo n'est pas connue ; vidéo trouvée gardée dans `.cache/videos.json`).
+Lieux acceptés dans les titres : `GP_FR_ALIAS` (« Amériques », « Catalogne », « Saint-Marin »…). La clé est partagée avec le site NBA.
