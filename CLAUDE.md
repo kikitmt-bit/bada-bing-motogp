@@ -52,3 +52,14 @@ Mêmes règles d'affichage que la NBA : infos courtes sur une ligne (`nowrap` + 
 - Classement : top 5 en cartes verticales (photo au centre, numéro derrière). Têtes rondes cadrées visage + torse (`.hd img`).
 - Actus : une image par article (RSS, sinon `content:encoded`, sinon og:image de la page : `og_image`, `.cache/og.json`).
 - Marque sans les barres ni « sans spoil » ; barre d'outils Streamlit (Share, étoile, crayon, GitHub) cachée en CSS.
+
+## v-m005 (retours de Kiki)
+- Plus de liste déroulante des GP (doublon avec le calendrier) : bande `.gpbar` « ‹ GP précédent · 📅 Tous les GP · GP suivant › ».
+- Tracé du circuit : BLANC, sans néon, à côté du titre (`.ttl .trk`) et aligné avec le nom dans les cartes du calendrier.
+  L'image du tracé a ~25 % de marge transparente : on l'agrandit avec des marges négatives.
+- Boutons de tri (`st.segmented_control`) restylés en onglets penchés (`[data-testid="stButtonGroup"]`) ; classement :
+  catégorie + type sur une seule ligne (`stdbar`).
+- Photos des pilotes : `fix_photos` teste chaque photo et prend celle de la fiche du pilote (`riders/<id>`, carrière) si
+  absente ou cassée (Chantra : « motogp.com//riders » en 404 ; Nakagami : absente).
+- Images des actus : Paddock GP refuse ses images affichées depuis un autre site (403 avec un référent) et refuse les relais
+  (wsrv.nl) : `<img referrerpolicy='no-referrer'>` en direct ; pour Paddock GP, l'og:image de l'article. Visuel de secours.

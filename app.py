@@ -27,7 +27,7 @@ try:
 except Exception:  # pragma: no cover
     components = None
 
-APP_VERSION = "2026-11-m004"
+APP_VERSION = "2026-11-m005"
 HERE = os.path.dirname(os.path.abspath(__file__))
 CACHE_DIR = os.path.join(HERE, ".cache")
 log = logging.getLogger("motogp")
@@ -425,8 +425,41 @@ def riders_info(year):
                     "in_grid": step.get("in_grid", True), "type": step.get("type", ""),
                 }
     if out:
+        fix_photos(out, year)
         disk_put(f"riders_{year}.json", out)
     return out or disk_get(f"riders_{year}.json") or {}
+
+
+def _url_ok(u):
+    try:
+        return bool(u) and SESSION.head(u, timeout=8, allow_redirects=True).status_code == 200
+    except Exception:
+        return False
+
+
+def fix_photos(out, year):
+    """Photo absente ou cassée dans la liste des équipes (ex. Chantra, Nakagami) : on prend celle de la fiche du pilote."""
+    ids = list(out)
+    with ThreadPoolExecutor(max_workers=12) as pool:
+        ok = dict(zip(ids, pool.map(lambda i: _url_ok(out[i]["photo"]), ids)))
+    bad = [i for i in ids if not ok[i]]
+
+    def better(rid):
+        d = get_json(f"{API}/riders/{rid}") or {}
+        cands = []
+        for c in d.get("career") or []:
+            u = ((c.get("pictures") or {}).get("profile") or {}).get("main")
+            if u:
+                cands.append((c.get("season") == year, c.get("season") or 0, u))
+        for _, _, u in sorted(cands, reverse=True):
+            u = u.replace("motogp.com//", "motogp.com/")
+            if _url_ok(u):
+                return u
+        return ""
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        for rid, u in zip(bad, pool.map(better, bad)):
+            out[rid]["photo"] = u
 
 
 def rider_of(rid, row=None):
@@ -712,7 +745,9 @@ def news(_bucket=None):
                         break
             desc = strip_html(it.findtext("description") or "")
             desc = re.sub(r"\s*(Continuez de lire|Lire la suite|The post .*)$", "", desc)
-            if not img:
+            if source == "Paddock GP":  # image de l'article hébergée chez eux (celles du texte viennent parfois d'ailleurs)
+                img = ""
+            if not img and source != "Paddock GP":
                 body = (it.findtext("{http://purl.org/rss/1.0/modules/content/}encoded") or "") + (it.findtext("description") or "")
                 m = re.search(r"<img[^>]+src=[\"']([^\"']+)", body)
                 img = m.group(1) if m else ""
@@ -1334,6 +1369,13 @@ div[data-testid="stElementContainer"]:has(> iframe[data-testid="stIFrame"]), div
 .brand .sl {width:46px; height:22px; transform:skewX(-20deg);
   background:repeating-linear-gradient(90deg, var(--red) 0 6px, transparent 6px 10px);}
 .brand small {color:var(--mu); font:600 12px var(--B); letter-spacing:3px; text-transform:uppercase; margin-left:4px;}
+.gpbar {display:flex; justify-content:space-between; align-items:center; gap:10px; margin:2px 0 4px;}
+.stMarkdown a.gpn {display:inline-flex; align-items:center; gap:8px; color:var(--mu) !important; font:800 15px var(--D);
+  text-transform:uppercase; letter-spacing:.8px; white-space:nowrap; min-width:0; padding:6px 4px; transition:color .15s;}
+.stMarkdown a.gpn em {font-style:italic; overflow:hidden; text-overflow:ellipsis;}
+.stMarkdown a.gpn span {font-size:22px; line-height:1; color:var(--red);}
+.stMarkdown a.gpn:hover {color:#fff !important; text-decoration:none !important;}
+.stMarkdown a.gpn.c {color:#fff !important; border:1px solid var(--line); border-radius:6px; padding:5px 14px; transform:skewX(-12deg);}
 .st-key-gpnav [data-testid="stHorizontalBlock"] {flex-wrap:nowrap !important; gap:8px;}
 .st-key-gpnav [data-testid="stColumn"]:first-child, .st-key-gpnav [data-testid="stColumn"]:last-child {flex:0 0 52px !important;
   min-width:52px !important; width:52px !important;}
@@ -1353,6 +1395,16 @@ div[data-testid="stElementContainer"]:has(> iframe[data-testid="stIFrame"]), div
 .sec small {color:var(--mu); font-size:13px;}
 .sec .sr {margin-left:auto; font-size:13px;}
 .note {color:var(--mu); font-size:13px;}
+[data-testid="stButtonGroup"] [role="radiogroup"] {display:inline-flex; gap:2px; padding:3px; border-radius:8px; flex-wrap:nowrap;
+  background:rgba(255,255,255,.03); border:1px solid var(--line);}
+[data-testid="stButtonGroup"] button[data-variant="segmented_control"] {background:transparent !important; border:none !important;
+  border-radius:5px !important; padding:5px 16px !important; min-height:0 !important; transform:skewX(-12deg); box-shadow:none !important;
+  margin:0 !important; transition:background .15s;}
+[data-testid="stButtonGroup"] button[data-variant="segmented_control"] p {font:800 15px var(--D) !important; text-transform:uppercase;
+  letter-spacing:.8px; color:var(--mu); transform:skewX(12deg); white-space:nowrap;}
+[data-testid="stButtonGroup"] button[data-variant="segmented_control"]:hover p {color:#fff;}
+[data-testid="stButtonGroup"] button[aria-checked="true"] {background:var(--red) !important; box-shadow:0 4px 18px rgba(225,6,0,.35) !important;}
+[data-testid="stButtonGroup"] button[aria-checked="true"] p {color:#fff !important;}
 .pill {display:inline-flex; align-items:center; gap:5px; padding:3px 10px; border-radius:4px; font:700 12px var(--B);
   white-space:nowrap; text-transform:uppercase; letter-spacing:.8px; background:var(--card2); color:var(--silver);}
 .pill.live {background:var(--red); color:#fff; animation:pulse 1.6s infinite;}
@@ -1369,7 +1421,10 @@ div[data-testid="stElementContainer"]:has(> iframe[data-testid="stIFrame"]), div
   background:linear-gradient(90deg, rgba(4,5,8,.97) 0%, rgba(4,5,8,.85) 38%, rgba(4,5,8,.35) 70%, rgba(4,5,8,.6) 100%),
              linear-gradient(0deg, rgba(4,5,8,.95) 0%, transparent 45%);}
 .hero-in {display:flex; justify-content:space-between; align-items:center; gap:20px; padding:28px 32px 18px; min-height:330px;}
-.hero-l {min-width:0; flex:1 1 54%; display:flex; flex-direction:column; gap:8px;}
+.hero-l {min-width:0; flex:1 1 auto; display:flex; flex-direction:column; gap:8px;}
+.ttl {display:flex; align-items:center; gap:26px; min-width:0;}
+.ttl .trk {height:230px; width:auto; max-width:300px; margin:-55px -40px -55px -30px; object-fit:contain; flex:none; opacity:.95;
+  filter:drop-shadow(0 2px 10px rgba(0,0,0,.6));}
 .rnd {display:inline-flex; align-items:center; gap:8px; align-self:flex-start; background:var(--red); color:#fff;
   padding:4px 14px 4px 12px; transform:skewX(-14deg); font:800 13px var(--D); letter-spacing:2px; text-transform:uppercase;}
 .rnd b {font:900 italic 20px/1 var(--D);} .rnd i {opacity:.7; font-style:normal;}
@@ -1563,8 +1618,8 @@ table.res .pts {font:800 16px var(--D);}
 .nx .tms {display:flex; gap:18px; margin-top:12px; flex-wrap:wrap;}
 .nx .tms div {white-space:nowrap;} .nx .tms span {display:block; color:var(--mu); font-size:11px; text-transform:uppercase; letter-spacing:1.2px;}
 .nx .tms b {font-size:20px; margin:0;}
-.nx img.trk {position:absolute; right:24px; top:50%; transform:translateY(-50%); width:38%; max-width:300px; max-height:85%;
-  object-fit:contain; filter:drop-shadow(0 0 3px #fff) drop-shadow(0 0 14px rgba(225,6,0,.9));}
+.nx img.trk {position:absolute; right:0; top:50%; transform:translateY(-50%); height:120%; width:auto; max-width:42%;
+  object-fit:contain; opacity:.92; filter:drop-shadow(0 2px 10px rgba(0,0,0,.6));}
 /* ---------- calendrier ---------- */
 .cal {display:grid; grid-template-columns:repeat(auto-fill, minmax(290px, 1fr)); gap:14px;}
 .cc {position:relative; display:block; border-radius:14px; overflow:hidden; min-height:210px; isolation:isolate; border:1px solid var(--line);
@@ -1581,8 +1636,9 @@ a.cc:hover:before {transform:scale(1.05);}
 .cc.live {box-shadow:0 0 0 2px var(--red);}
 .cc .r {position:absolute; top:8px; left:14px; font:900 italic 46px/1 var(--D); color:rgba(255,255,255,.9); text-shadow:0 4px 18px rgba(0,0,0,.6);}
 .cc .stt {position:absolute; top:12px; right:12px;}
-.cc .trk {position:absolute; right:10px; top:44px; width:58%; max-width:240px; max-height:140px; object-fit:contain;
-  filter:drop-shadow(0 0 2px #fff) drop-shadow(0 0 10px rgba(225,6,0,.9));}
+.cc .trk {position:absolute; right:-8px; bottom:-14px; height:118px; width:auto; max-width:150px; object-fit:contain; opacity:.92;
+  filter:drop-shadow(0 2px 8px rgba(0,0,0,.7));}
+.cc .b {right:120px !important;}
 .cc .b {position:absolute; left:14px; right:14px; bottom:12px;}
 .cc .b .f {display:flex; align-items:center; gap:8px; color:#d0d5de; font-size:12px; text-transform:uppercase; letter-spacing:1.2px;}
 .cc .b .f img {height:14px; border-radius:2px;}
@@ -1669,7 +1725,10 @@ a.rt:hover img {transform:translateX(-50%) scale(1.04);}
 .nw {background:var(--card); border:1px solid var(--line); border-radius:14px; overflow:hidden; display:flex; flex-direction:column;
   text-decoration:none; min-width:0; height:100%; transition:transform .15s;}
 a.nw:hover {transform:translateY(-3px);}
-.nw .im {height:170px; background:#15181f var(--img) center/cover;}
+.nw .im {position:relative; height:170px; overflow:hidden;
+  background:linear-gradient(135deg, rgba(225,6,0,.55), rgba(225,6,0,.08) 55%), repeating-linear-gradient(115deg, #12151c 0 18px, #171b23 18px 36px);}
+.nw .im:before {content:'MOTOGP'; position:absolute; left:14px; bottom:10px; font:900 italic 34px var(--D); color:rgba(255,255,255,.18);}
+.nw .im img {position:absolute; inset:0; width:100%; height:100%; object-fit:cover; display:block;}
 .nw .b {padding:12px 14px;}
 .nw .t {font:800 19px/1.15 var(--D); color:var(--tx);}
 .nw .d {color:var(--mu); font-size:13px; margin-top:6px;}
@@ -1698,7 +1757,7 @@ a.nw:hover {transform:translateY(-3px);}
   .brand .lg {font-size:24px;} .brand small {display:none;}
   .hero-in {flex-direction:column; padding:20px 18px 14px; min-height:0;}
   .hero h1 {font-size:44px;}
-  .hero-r {position:absolute; right:-40px; top:0; bottom:0; width:70%; min-height:0; margin:0; flex:none; opacity:.4; z-index:-1;}
+  .ttl {gap:4px;} .ttl .trk {height:130px; max-width:150px; margin:-32px -24px -32px -18px;}
   .hstats b {font-size:19px;} .hstats b small {display:none;} .hstats div {padding:10px;}
   .hstats span {font-size:9px; letter-spacing:.6px; overflow:hidden; text-overflow:ellipsis; display:block;}
   .brand .sl {display:none;}
@@ -1818,7 +1877,7 @@ def gp_hero(ev, sess, zone, nev=None, total=22):
     title = f"{esc(' '.join(parts[:2]))}<em>{esc(parts[2] if len(parts) > 2 else '')}</em>"
     flag_img = f"<img src='{esc(m['flag'])}' alt=''>" if m.get("flag") else flag(ev["iso"])
     city = m.get("city") or ev["place"]
-    trk = f"<div class='hero-r'><img src='{esc(m['track'])}' alt='Tracé du circuit'></div>" if m.get("track") else ""
+    trk = f"<img class='trk' src='{esc(m['track'])}' alt='Tracé du circuit'>" if m.get("track") else ""
     laps = (m.get("laps") or {}).get("MGP") or {}
     stats = []
     if m.get("km"):
@@ -1839,9 +1898,9 @@ def gp_hero(ev, sess, zone, nev=None, total=22):
     bg = m.get("bg") or m.get("top") or ""
     return (f"<div class='hero'><div class='hero-bg' style=\"--img:url('{esc(bg)}')\"></div><div class='hero-in'><div class='hero-l'>"
             f"<div class='rnd'>Manche <b>{ev['round']}</b><i>/ {total}</i></div>"
-            f"<div class='ctry'>{flag_img} {esc(city)} · {esc(m.get('country') or '')}</div><h1>{title}</h1>"
+            f"<div class='ctry'>{flag_img} {esc(city)} · {esc(m.get('country') or '')}</div><div class='ttl'><h1>{title}</h1>{trk}</div>"
             f"<div class='hsub'>{esc(ev['circuit'])} · {esc(fr_range(ev['start'], ev['end']))}</div>"
-            f"<div class='hstate'>{pill}{cd}</div></div>{trk}</div>{hs}<div class='kerb'></div></div>")
+            f"<div class='hstate'>{pill}{cd}</div></div></div>{hs}<div class='kerb'></div></div>")
 
 
 def replay_buttons(ev, s, cat, pays):
@@ -2044,19 +2103,9 @@ def gp_page(ctx):
     evs, zone, fav = ctx["evs"], ctx["zone"], ss.get("fav")
     ev = pick_event(evs, ss.get("gp"))
     i = evs.index(ev)
-    with st.container(key="gpnav"):
-        c1, c2, c3 = st.columns([1, 6, 1])
-        if c1.button("‹", key="gp_prev", disabled=i == 0, use_container_width=True):
-            ss.gp = evs[i - 1]["code"]
-            st.rerun()
-        names = [f"{flag(e['iso'])}  Manche {e['round']} · {e['name']} · {fr_range(e['start'], e['end'])}" for e in evs]
-        pick = c2.selectbox("Grand Prix", names, index=i, label_visibility="collapsed", key=f"gp_sel_{ev['code']}")
-        if names.index(pick) != i:
-            ss.gp = evs[names.index(pick)]["code"]
-            st.rerun()
-        if c3.button("›", key="gp_next", disabled=i == len(evs) - 1, use_container_width=True):
-            ss.gp = evs[i + 1]["code"]
-            st.rerun()
+    prv = link(f"vue=gp&gp={evs[i - 1]['code']}", f"<span>‹</span><em>{esc(evs[i - 1]['name'])}</em>", "gpn") if i > 0 else "<span></span>"
+    nxt = link(f"vue=gp&gp={evs[i + 1]['code']}", f"<em>{esc(evs[i + 1]['name'])}</em><span>›</span>", "gpn r") if i < len(evs) - 1 else "<span></span>"
+    st.markdown(f"<div class='gpbar'>{prv}{link('vue=calendrier', '📅 Tous les GP', 'gpn c')}{nxt}</div>", unsafe_allow_html=True)
     cat_ids, results, cut = ctx["cat_ids"], ctx["results"], ctx["cut"]
     wk = weekend(ev, cat_ids)
     msess = wk.get("MotoGP") or []
@@ -2188,18 +2237,20 @@ def cut_note(cut, ctx):
 def standings_page(ctx):
     ss = st.session_state
     cat = ss.get("cat", "MotoGP")
-    c1, c2 = st.columns([3, 2])
+    with st.container(key="stdbar"):
+        c1, c2, c3 = st.columns([3, 4, 3], vertical_alignment="center")
     with c1:
         cat = st.segmented_control("Catégorie", CATS, default=cat, key="cat_std", label_visibility="collapsed") or cat
     ss.cat = cat
+    with c2:
+        kind = st.segmented_control("Classement", ["Pilotes", "Équipes", "Constructeurs"], default="Pilotes", key="std_kind",
+                                    label_visibility="collapsed") or "Pilotes"
     results = ctx["results"] if cat == "MotoGP" else season_results(ctx["evs"], ctx["cat_ids"][cat])
     cut = spoil_cut(results, ss.seen, ctx["show_all"])
     if cut:
-        with c2:
+        with c3:
             if st.toggle("Inclure le dernier GP", key="inc_last"):
                 cut = set()
-    kind = st.segmented_control("Classement", ["Pilotes", "Équipes", "Constructeurs"], default="Pilotes", key="std_kind",
-                                label_visibility="collapsed") or "Pilotes"
     st.markdown(sec_title(f"Championnat {cat} {ctx['year']}", esc(cut_note(cut, ctx)) or kind), unsafe_allow_html=True)
     fav = ss.get("fav")
     if kind == "Pilotes":
@@ -2382,13 +2433,20 @@ def riders_page(ctx):
                     unsafe_allow_html=True)
 
 
+def img_proxy(u):
+    """Image d'un article. Chargée sans « référent » (referrerpolicy) : Paddock GP refuse ses images affichées depuis un
+    autre site (403), mais les sert sans référent. Les relais d'images (wsrv.nl) sont refusés aussi."""
+    return u
+
+
 def news_html(items, ctx):
     spoil = ctx["spoil_from"]
     out = []
     for n in items:
         pub = parse_dt(n["pub"])
         when = rel_time(pub) if pub else ""
-        img = f"<div class='im' style=\"--img:url('{esc(n['img'])}')\"></div>" if n.get("img") else ""
+        img = (f"<div class='im'><img src='{esc(img_proxy(n['img']))}' loading='lazy' referrerpolicy='no-referrer' alt=''></div>"
+               if n.get("img") else "<div class='im'></div>")
         card = (f"<a class='nw' href='{esc(n['link'])}' target='_blank' rel='noopener'>{img}<div class='b'>"
                 f"<div class='t'>{esc(n['title'])}</div><div class='d'>{esc(n['desc'][:170])}</div>"
                 f"<div class='m'>{esc(n['source'])} · {esc(when)}</div></div></a>")
