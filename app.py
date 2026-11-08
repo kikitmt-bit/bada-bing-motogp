@@ -27,7 +27,7 @@ try:
 except Exception:  # pragma: no cover
     components = None
 
-APP_VERSION = "2026-11-m013"
+APP_VERSION = "2026-11-m014"
 HERE = os.path.dirname(os.path.abspath(__file__))
 CACHE_DIR = os.path.join(HERE, ".cache")
 log = logging.getLogger("motogp")
@@ -961,7 +961,7 @@ def api_search(channel, query, after_iso, before_iso):
     key = str(_secret("youtube", "api_key", ""))
     if not key:
         return []
-    params = {"part": "snippet", "channelId": channel, "q": query, "type": "video", "maxResults": 25, "order": "relevance",
+    params = {"part": "snippet", "channelId": channel, "q": query, "type": "video", "maxResults": 25, "order": "relevance", "regionCode": "FR", "relevanceLanguage": "fr",
               "publishedAfter": after_iso, "publishedBefore": before_iso, "key": key}
     try:
         r = SESSION.get("https://www.googleapis.com/youtube/v3/search", params=params, timeout=12)
