@@ -78,6 +78,12 @@ ouverte n'est pas le site (adresse à corriger dans `SITE_URL`). Lancement à la
 ## v-m007 : bannière du GP refaite (carte blanche de Kiki)
 `gp_hero` = deux panneaux (`.hero2`) coupés en biais par un vibreur (`.cut`) : à gauche la photo du GP, vive (fondu seulement
 en bas), manche + pays en haut, nom + dates + compte à rebours en bas ; à droite la FICHE CIRCUIT façon plan d'ingénieur (`.bp`,
-fond bleu nuit quadrillé, balayage rouge animé) : tracé en grand au centre, 4 chiffres dans les coins avec équerres (longueur,
+fond gris graphite quadrillé, séparé de la photo par un trait rouge vertical net ; v-m008 : plus de vibreur en biais ni de balayage) : tracé en grand au centre, 4 chiffres dans les coins avec équerres (longueur,
 virages G/D, ligne droite, tours + sprint), pied : distance de course + record du tour (`lap_record`, seulement s'il date d'avant
 ce GP : sinon spoil). Plus de bande de chiffres en dessous. Téléphone : photo puis fiche, l'une sous l'autre.
+
+## v-m008 (retours de Kiki)
+- Plus de pilote favori (inutile en MotoGP : tout le monde suit les mêmes courses) : réglage, bouton « Suivre », filtre d'actus retirés.
+- Plus de bandeau de bienvenue (il revenait sans cesse sur Streamlit Cloud).
+- Classement : top 3 en podium (2 · 1 · 3, le 1er plus haut). Classe « pd » des 3 derniers GP renommée `pod` (conflit avec le podium).
+- Téléphone : onglets sur 2 lignes (3 par ligne) ; tableau du classement réduit à # · pilote · pts · 3 derniers GP (`.hm` masqué).

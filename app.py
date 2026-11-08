@@ -27,7 +27,7 @@ try:
 except Exception:  # pragma: no cover
     components = None
 
-APP_VERSION = "2026-11-m007"
+APP_VERSION = "2026-11-m008"
 HERE = os.path.dirname(os.path.abspath(__file__))
 CACHE_DIR = os.path.join(HERE, ".cache")
 log = logging.getLogger("motogp")
@@ -1329,8 +1329,6 @@ def opts_from(raw, tzname=""):
 def apply_restore(q):
     ss = st.session_state
     ss.restored = True
-    if q.get("fav"):
-        ss.fav = q["fav"]
     if q.get("opt"):
         ss.opts = opts_from(q["opt"], ss.get("tzname", ""))
     if q.get("vues"):
@@ -1501,36 +1499,29 @@ div[data-testid="stElementContainer"]:has(> iframe[data-testid="stIFrame"]), div
 .hcd small {color:#c9ced8; font:700 11px var(--B); letter-spacing:2px; text-transform:uppercase;}
 .hcd b {font:900 italic 34px/1.05 var(--D); color:#fff; text-transform:uppercase; white-space:nowrap;}
 .hcd b span {color:var(--red2);}
-/* coupe en biais entre les deux panneaux, en vibreur */
-.hero2 .cut {position:absolute; top:-10px; bottom:-10px; left:calc(52.8% - 34px); width:26px; z-index:3; transform:skewX(-12deg);
-  background:repeating-linear-gradient(180deg, var(--red) 0 20px, #fff 20px 40px); box-shadow:0 0 30px rgba(0,0,0,.8);}
-.hero2.solo .cut {display:none;}
-.bp {position:relative; overflow:hidden; min-width:0; margin-left:-60px; padding-left:60px;
-  background:radial-gradient(120% 90% at 60% 50%, #13233f 0%, #0a1426 55%, #060b16 100%);}
+.bp {position:relative; overflow:hidden; min-width:0; border-left:3px solid var(--red);
+  background:radial-gradient(110% 90% at 50% 50%, #20242c 0%, #14171d 55%, #0b0d11 100%);}
 .bp-grid {position:absolute; inset:0;
-  background:linear-gradient(rgba(140,180,255,.07) 1px, transparent 1px) 0 0/20px 20px,
-             linear-gradient(90deg, rgba(140,180,255,.07) 1px, transparent 1px) 0 0/20px 20px,
-             linear-gradient(rgba(140,180,255,.12) 1px, transparent 1px) 0 0/100px 100px,
-             linear-gradient(90deg, rgba(140,180,255,.12) 1px, transparent 1px) 0 0/100px 100px;}
-.bp-scan {position:absolute; top:0; bottom:0; width:120px; left:-140px;
-  background:linear-gradient(90deg, transparent, rgba(225,6,0,.16), transparent); animation:scan 7s linear infinite;}
-@keyframes scan {0% {left:-140px;} 60%, 100% {left:110%;}}
-.bp-t {position:absolute; left:calc(50% + 30px); top:52%; transform:translate(-50%, -50%); height:150%; max-width:96%; object-fit:contain;
-  filter:drop-shadow(0 0 1px #fff) drop-shadow(0 0 12px rgba(120,170,255,.35)); z-index:1;}
-.bp-h {position:absolute; top:14px; left:0; right:0; padding-left:72px; text-align:center; z-index:2; white-space:nowrap; overflow:hidden;
+  background:linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px) 0 0/20px 20px,
+             linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px) 0 0/20px 20px,
+             linear-gradient(rgba(255,255,255,.07) 1px, transparent 1px) 0 0/100px 100px,
+             linear-gradient(90deg, rgba(255,255,255,.07) 1px, transparent 1px) 0 0/100px 100px;}
+.bp-t {position:absolute; left:50%; top:52%; transform:translate(-50%, -50%); height:150%; max-width:96%; object-fit:contain;
+  filter:drop-shadow(0 4px 14px rgba(0,0,0,.6)); z-index:1;}
+.bp-h {position:absolute; top:14px; left:0; right:0; text-align:center; z-index:2; white-space:nowrap; overflow:hidden;
   text-overflow:ellipsis;}
 .bp-h span {display:block; color:var(--red2); font:700 10px var(--B); letter-spacing:3px; text-transform:uppercase;}
-.bp-h b {color:#dbe6ff; font:700 13px var(--B); letter-spacing:1px; text-transform:uppercase;}
+.bp-h b {color:#e6e9ee; font:700 13px var(--B); letter-spacing:1px; text-transform:uppercase;}
 .bp-s {position:absolute; z-index:2; padding:6px 10px; min-width:0; white-space:nowrap;}
-.bp-s:before {content:''; position:absolute; width:14px; height:14px; border-color:rgba(219,230,255,.6); border-style:solid;}
-.bp-s span {display:block; color:#8fa6cf; font:700 10px var(--B); letter-spacing:2px; text-transform:uppercase;}
+.bp-s:before {content:''; position:absolute; width:14px; height:14px; border-color:rgba(255,255,255,.45); border-style:solid;}
+.bp-s span {display:block; color:#8d95a5; font:700 10px var(--B); letter-spacing:2px; text-transform:uppercase;}
 .bp-s b {font:900 italic 30px/1 var(--D); color:#fff;}
-.bp-s b small {font:600 13px var(--B); color:#9fb3d8; font-style:normal; margin-left:2px;}
-.bp-s.tl {top:54px; left:76px;} .bp-s.tl:before {left:0; top:0; border-width:2px 0 0 2px;}
+.bp-s b small {font:600 13px var(--B); color:#9aa1ad; font-style:normal; margin-left:2px;}
+.bp-s.tl {top:54px; left:18px;} .bp-s.tl:before {left:0; top:0; border-width:2px 0 0 2px;}
 .bp-s.tr {top:54px; right:18px; text-align:right;} .bp-s.tr:before {right:0; top:0; border-width:2px 2px 0 0;}
-.bp-s.bl {bottom:40px; left:76px;} .bp-s.bl:before {left:0; bottom:0; border-width:0 0 2px 2px;}
+.bp-s.bl {bottom:40px; left:18px;} .bp-s.bl:before {left:0; bottom:0; border-width:0 0 2px 2px;}
 .bp-s.br {bottom:40px; right:18px; text-align:right;} .bp-s.br:before {right:0; bottom:0; border-width:0 2px 2px 0;}
-.bp-f {position:absolute; bottom:12px; left:0; right:0; padding-left:72px; text-align:center; z-index:2; color:#9fb3d8; font:500 12px var(--B);
+.bp-f {position:absolute; bottom:12px; left:0; right:0; text-align:center; z-index:2; color:#9aa1ad; font:500 12px var(--B);
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
 .bp-f b {color:#fff; font-weight:700;}
 /* ---------- barre d'outils (tout dévoiler) ---------- */
@@ -1753,6 +1744,10 @@ a.cc:hover:before {transform:scale(1.05);}
 .t5 .n {font:900 italic 21px/1 var(--D); text-transform:uppercase; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
 .t5 .tm {color:#c3c9d3; font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:2px;}
 .t5 .pts {font:900 italic 28px/1 var(--D); margin-top:6px; white-space:nowrap;} .t5 .pts small {font-size:13px; color:var(--mu);}
+.top5.pod3 {grid-template-columns:repeat(3, 1fr); align-items:end; gap:16px; max-width:980px; margin:0 auto 18px;}
+.pod3 .t5 {height:320px;} .pod3 .t5.r1 {height:370px; box-shadow:0 0 0 1px rgba(243,195,78,.55), 0 24px 60px rgba(243,195,78,.14);}
+.pod3 .t5 img {height:230px;} .pod3 .t5.r1 img {height:270px;}
+.pod3 .t5 .p {font-size:52px;} .pod3 .t5 .n {font-size:24px;} .pod3 .t5 .pts {font-size:32px;}
 .top3 {display:grid; grid-template-columns:repeat(3, 1fr); gap:12px; margin-bottom:16px;}
 .t3 {position:relative; border-radius:16px; overflow:hidden; min-height:200px; border:1px solid var(--line); display:flex; align-items:flex-end;
   background:linear-gradient(160deg, color-mix(in srgb, var(--c) 75%, #000), #0b0d12 80%);}
@@ -1776,7 +1771,7 @@ table.std .rk {font:900 italic 19px var(--D); text-align:center; width:34px;}
   margin-top:4px;}
 .lp {display:inline-block; min-width:24px; padding:1px 4px; margin-left:3px; border-radius:4px; background:var(--card2);
   font:700 12px var(--D); text-align:center;}
-.lp.w {background:var(--gold); color:#000;} .lp.pd {background:#3b4250;} .lp.x {background:rgba(225,6,0,.3); color:#ff9a95;}
+.lp.w {background:var(--gold); color:#000;} .lp.pod {background:#3b4250;} .lp.x {background:rgba(225,6,0,.3); color:#ff9a95;}
 .scroll {overflow-x:auto;}
 /* ---------- pilotes ---------- */
 .rg {display:grid; grid-template-columns:repeat(auto-fill, minmax(190px, 1fr)); gap:12px;}
@@ -1855,21 +1850,27 @@ a.nw:hover {transform:translateY(-3px);}
   .hero2 .ph {height:auto;}
   .ph-in {position:relative; left:auto; right:auto; top:auto; bottom:auto; padding:16px 18px 18px; min-height:290px; gap:28px;}
   .hero2 h1 {font-size:40px;} .hcd b {font-size:26px;}
-  .hero2 .cut {left:0; right:0; top:auto; bottom:auto; width:auto; height:8px; transform:none; position:relative;
-    background:repeating-linear-gradient(90deg, var(--red) 0 20px, #fff 20px 40px);}
-  .bp {height:250px; margin-left:0; padding-left:0;}
+  .bp {height:250px; border-left:none; border-top:3px solid var(--red);}
   .bp-t {left:50%; height:130%;} .bp-h, .bp-f {padding-left:0;}
   .bp-s.tl, .bp-s.bl {left:10px;} .bp-s.tr, .bp-s.br {right:10px;} .bp-s b {font-size:22px;}
   .bf-grid {grid-template-columns:1fr;}
-  .top5 {grid-template-columns:none; grid-auto-flow:column; grid-auto-columns:46%; overflow-x:auto; scrollbar-width:none;}
-  .t5 {height:280px;} .t5 img {height:180px;} .t5:before {font-size:110px;}
+  .top5.pod3 {gap:6px;} .pod3 .t5 {height:210px;} .pod3 .t5.r1 {height:250px;}
+  .pod3 .t5 img {height:130px; bottom:78px;} .pod3 .t5.r1 img {height:165px;} .t5:before {font-size:70px;}
+  .pod3 .t5 .p {font-size:30px;} .pod3 .t5 .n {font-size:15px;} .pod3 .t5 .tm {display:none;} .pod3 .t5 .pts {font-size:20px;}
+  .t5 .b {padding:8px;}
   .rg {grid-template-columns:repeat(2, 1fr);} .rt {height:230px;} .rt img {height:150px;} .rt .n {font-size:70px;}
   .rhead {padding:14px 14px 0; gap:10px;} .rhead img {height:150px;} .rhead h1 {font-size:38px;} .rhead:before {font-size:150px;}
   .rn .tm {max-width:140px;}
   .podium {gap:6px;} .pdi {height:100px;} .pd1 .pdi {height:130px;} .pdn {font-size:16px;} .pdp {font-size:44px; top:-34px;}
   .fav .fi {flex-basis:110px;} .fav .fi img {height:120px;} .fav .t {font-size:26px;}
-  .st-key-tabs [data-testid="stHorizontalBlock"] {flex-wrap:nowrap !important; overflow-x:auto; gap:4px; scrollbar-width:none;}
-  .st-key-tabs [data-testid="stColumn"] {min-width:max-content !important; flex:none !important; width:auto !important;}
+  .st-key-tabs [data-testid="stHorizontalBlock"] {flex-wrap:wrap !important; gap:6px !important;}
+  .st-key-tabs [data-testid="stColumn"] {flex:0 0 calc(33.33% - 4px) !important; min-width:0 !important; width:calc(33.33% - 4px) !important;}
+  .st-key-tabs button p {font-size:14px !important;}
+  .st-key-tabs button {padding:4px 6px !important;}
+  table.std .hm {display:none;}
+  table.std td, table.std th {padding:6px 4px;}
+  table.std .rc .nb, table.std .rn .tm {display:none;}
+  table.std .rn b {max-width:118px;} table.std .rc .hd {width:28px !important; height:28px !important;}
 }
 </style>
 """
@@ -2020,7 +2021,7 @@ def gp_hero(ev, sess, zone, nev=None, total=22):
     elif m.get("built"):
         foot.append(f"Construit en <b>{esc(m['built'])}</b>")
     trk = f"<img class='bp-t' src='{esc(m['track'])}' alt='Tracé du circuit'>" if m.get("track") else ""
-    bp = (f"<div class='bp'><div class='bp-grid'></div><div class='bp-scan'></div>"
+    bp = (f"<div class='bp'><div class='bp-grid'></div>"
           f"<div class='bp-h'><span>Fiche circuit</span><b>{esc(ev['circuit'])}</b></div>{trk}{''.join(cells)}"
           f"<div class='bp-f'>{' · '.join(foot)}</div></div>") if trk else ""
 
@@ -2028,7 +2029,7 @@ def gp_hero(ev, sess, zone, nev=None, total=22):
             f"<div class='ph-top'><div class='rnd'>Manche <b>{ev['round']}</b><i>/ {total}</i></div>"
             f"<div class='ctry'>{flag_img} {esc(city)} · {esc(m.get('country') or '')}</div></div>"
             f"<div class='ph-bot'><h1>{title}</h1><div class='hsub'>{esc(fr_range(ev['start'], ev['end']))} {pill}</div>{cd}</div></div></div>"
-            f"<div class='cut'></div>{bp}</div>")
+            f"{bp}</div>")
 
 
 
@@ -2379,29 +2380,29 @@ def standings_page(ctx):
     if kind == "Pilotes":
         table = standings(results, cut)
         top = []
-        for t in table[:5]:
+        for t in [table[i] for i in (1, 0, 2) if i < len(table)]:
             info = rider_of(t["rid"], t["row"])
             img = f"<img src='{esc(info['photo'])}' loading='lazy' alt=''>" if info.get("photo") else ""
             gap = f" <small>· -{t['gap']}</small>" if t["gap"] else ""
             top.append(f"<div class='t5 r{t['rank']}' data-n='{esc(info.get('num') or '')}' style='--c:{esc(color_of(t['rid'], t['row']))}'>"
                        f"<span class='p'>{t['rank']}</span>{img}<div class='b'><div class='n'>{rider_link(t['rid'], esc(short_name(info, t['row'])))}</div>"
                        f"<div class='tm'>{flag(t['iso'])} {esc(t['team'])}</div><div class='pts'>{t['pts']} <small>pts</small>{gap}</div></div></div>")
-        st.markdown(f"<div class='top5'>{''.join(top)}</div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='top5 pod3'>{''.join(top)}</div>", unsafe_allow_html=True)
         lead = max(table[0]["pts"], 1) if table else 1
-        head_ = ("<tr><th class='rk'>#</th><th class='l'>Pilote</th><th>Pts</th><th>Écart</th><th>Vict.</th><th>Podiums</th>"
-                 "<th>Sprints</th><th>Poles</th><th class='l'>3 derniers GP</th></tr>")
+        head_ = ("<tr><th class='rk'>#</th><th class='l'>Pilote</th><th>Pts</th><th class='hm'>Écart</th><th class='hm'>Vict.</th>"
+                 "<th class='hm'>Podiums</th><th class='hm'>Sprints</th><th class='hm'>Poles</th><th class='l'>3 derniers GP</th></tr>")
         rows = []
         for t in table:
             last = []
             for code, p in t["last"][-3:]:
-                c = "w" if p == 1 else "pd" if p and p <= 3 else "x" if not p else ""
+                c = "w" if p == 1 else "pod" if p and p <= 3 else "x" if not p else ""
                 last.append(f"<span class='lp {c}' title='{esc(GP.get(code, (code,))[0])}'>{p or 'ab'}</span>")
             col = esc(color_of(t["rid"], t["row"]))
             rows.append(f"<tr class='{'fav' if t['rid'] == fav else ''}'><td class='rk'>{t['rank']}</td>"
                         f"<td class='l'>{rider_cell(t['row'])}</td><td class='pts' style='--c:{col}'>{t['pts']}"
                         f"<span class='bar' style='width:{max(4, round(100 * t['pts'] / lead))}%'></span></td>"
-                        f"<td>{'–' if not t['gap'] else '-' + str(t['gap'])}</td><td>{t['wins']}</td><td>{t['pod']}</td>"
-                        f"<td>{t['swins']}</td><td>{t['poles']}</td><td class='l'>{''.join(last)}</td></tr>")
+                        f"<td class='hm'>{'–' if not t['gap'] else '-' + str(t['gap'])}</td><td class='hm'>{t['wins']}</td><td class='hm'>{t['pod']}</td>"
+                        f"<td class='hm'>{t['swins']}</td><td class='hm'>{t['poles']}</td><td class='l'>{''.join(last)}</td></tr>")
         st.markdown(f"<div class='card scroll'><table class='std'>{head_}{''.join(rows)}</table></div>", unsafe_allow_html=True)
         st.caption("Sprint (MotoGP) et course comptent · « Sprints » = victoires en sprint.")
     else:
@@ -2481,11 +2482,6 @@ def rider_page(ctx, rid):
     c1, c2 = st.columns([1, 1])
     if c1.button("‹ Tous les pilotes", key="back_riders"):
         ss.rider = None
-        st.rerun()
-    is_fav = ss.get("fav") == rid
-    if c2.button("★ Mon pilote" if is_fav else "☆ Suivre ce pilote", key="follow", type="primary" if is_fav else "secondary"):
-        ss.fav = None if is_fav else rid
-        set_cookie("gp_fav", ss.fav or "")
         st.rerun()
     age = f"{info['age']} ans · " if info.get("age") else ""
     born = f"né à {esc(info.get('city'))} ({esc(info.get('country'))})" if info.get("city") else esc(info.get("country", ""))
@@ -2593,14 +2589,9 @@ def news_page(ctx):
         st.markdown(f"<div class='shield'>🛡️ <b>Bouclier anti-spoil</b> : les articles publiés après le début de "
                     f"<b>{esc(s['label'])}</b> du {esc(ev['name'])} sont floutés tant que tu n'as pas ouvert ce GP. "
                     f"Un clic sur un article l'affiche.</div>", unsafe_allow_html=True)
-    who = st.segmented_control("Filtre", ["Tout", "Mon pilote", "MotoGP", "Moto2 / Moto3"], default="Tout", key="news_f",
+    who = st.segmented_control("Filtre", ["Tout", "MotoGP", "Moto2 / Moto3"], default="Tout", key="news_f",
                                label_visibility="collapsed") or "Tout"
-    if who == "Mon pilote":
-        last = norm(rider_of(ss.get("fav")).get("last", "")) if ss.get("fav") else ""
-        items = [n for n in items if last and last in norm(n["title"] + " " + n["desc"])]
-        if not ss.get("fav"):
-            st.info("Choisis ton pilote dans ⚙️ (ou « Suivre ce pilote » sur sa fiche).")
-    elif who == "MotoGP":
+    if who == "MotoGP":
         items = [n for n in items if not re.search(r"moto ?[23]\b", n["title"], re.I)]
     elif who == "Moto2 / Moto3":
         items = [n for n in items if re.search(r"moto ?[23]\b", n["title"] + " " + n["link"], re.I)]
@@ -2625,10 +2616,6 @@ def settings_panel(ctx):
     if cur and cur not in ids:
         ids.append(cur)
         names[cur] = rider_of(cur).get("name", cur)
-    pick = st.selectbox("⭐ Mon pilote", ids, index=ids.index(cur), format_func=lambda x: names.get(x, x), key="set_fav")
-    if (pick or None) != ss.get("fav"):
-        ss.fav = pick or None
-        set_cookie("gp_fav", pick or "")
     o = dict(ss.opts)
     pays = st.radio("Pays (« nos pilotes », vidéos)", ["FR", "CA"], index=["FR", "CA"].index(o["pays"]), horizontal=True,
                     format_func=lambda x: "🇫🇷 France" if x == "FR" else "🇨🇦 Canada", key="set_pays")
@@ -2677,7 +2664,7 @@ def main():
         cookies = {}
     if "opts" not in ss:
         ss.opts = opts_from(cookies.get("gp_opt", ""), tzname)
-        ss.fav = cookies.get("gp_fav") or None
+        ss.fav = None  # plus de pilote favori (v-m008)
         ss.seen = read_seen(cookies.get("gp_vues", ""))
         ss.hello_done = bool(cookies.get("gp_hello"))
         q = st.query_params
@@ -2709,12 +2696,6 @@ def main():
 
     st.markdown("<div class='brand'><span class='lg'>Bada Bing <i>MotoGP</i></span></div>", unsafe_allow_html=True)
 
-    if not ss.hello_done:
-        st.info("👋 Bienvenue ! Ici, **aucun résultat n'est montré sans ton accord** : chaque classement est caché derrière "
-                "« 👁 Voir », le championnat s'arrête avant le dernier GP tant que tu ne l'as pas ouvert, et les actus récentes "
-                "sont floutées. « 👁 Tout dévoiler » montre tout d'un coup. ▶ = replay. Choisis ton pilote dans ⚙️.")
-        set_cookie("gp_hello", "1")
-        ss.hello_done = True
 
     with st.container(key="tabs"):
         cols = st.columns([1] * len(TABS) + [0.32])
