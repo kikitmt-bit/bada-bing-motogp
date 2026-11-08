@@ -27,7 +27,7 @@ try:
 except Exception:  # pragma: no cover
     components = None
 
-APP_VERSION = "2026-11-m022"
+APP_VERSION = "2026-11-m024"
 HERE = os.path.dirname(os.path.abspath(__file__))
 CACHE_DIR = os.path.join(HERE, ".cache")
 log = logging.getLogger("motogp")
@@ -1436,7 +1436,7 @@ html, body, [data-testid="stAppViewContainer"], .stApp {background:
   repeating-linear-gradient(-45deg, rgba(255,255,255,.012) 0 2px, transparent 2px 6px), var(--bg) !important;
   background-attachment:fixed !important;}
 .stApp, .stMarkdown, .stMarkdown p, .stMarkdown div {font-family:var(--B);}
-.block-container {max-width:1280px; padding-top:1rem !important; padding-bottom:2rem !important;}
+.block-container {max-width:1440px; padding-top:1rem !important; padding-bottom:2rem !important;}
 header[data-testid="stHeader"] {height:0; background:transparent;}
 [data-testid="stToolbar"], [data-testid="stToolbarActions"], [data-testid="stAppDeployButton"], .stAppDeployButton,
 [data-testid="stDecoration"], [data-testid="stStatusWidget"], [class*="viewerBadge"], [data-testid="manage-app-button"],
@@ -1834,7 +1834,7 @@ table.std tr:hover td {background:rgba(255,255,255,.03);}
 table.std td.pts {font:900 italic 19px var(--D);}
 table.std tr.fav td {background:rgba(243,195,78,.08);}
 table.std .rk {font:900 italic 19px var(--D); text-align:center; width:34px;}
-.bar {display:block; height:5px; border-radius:3px; background:linear-gradient(90deg, var(--c), color-mix(in srgb, var(--c) 40%, transparent));
+.bar {display:block; height:7px; border-radius:4px; background:linear-gradient(90deg, var(--c), color-mix(in srgb, var(--c) 40%, transparent));
   margin-top:4px;}
 .lp {display:inline-block; min-width:24px; padding:1px 4px; margin-left:3px; border-radius:4px; background:var(--card2);
   font:700 12px var(--D); text-align:center;}
@@ -1871,7 +1871,12 @@ table.std .rk {font:900 italic 19px var(--D); text-align:center; width:34px;}
 .lb .gp {margin-left:6px; padding:2px 8px; border-radius:4px; background:rgba(255,255,255,.08); font:800 13px var(--D); color:#d9dee6;}
 .lb .gp.lead {background:var(--gold); color:#000; text-transform:uppercase; letter-spacing:.8px;}
 /* ---------- replays (bloc sous la bannière) ---------- */
-.rpg {display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:10px;}
+.rpg {display:flex; flex-wrap:wrap; gap:12px;}
+.rpk {flex:1 1 260px; max-width:calc(50% - 6px); position:relative; isolation:isolate; overflow:hidden; min-height:96px;}
+.rpk:before {content:''; position:absolute; inset:0; z-index:-2; background:var(--img) center/cover; filter:brightness(.85) saturate(1.1);
+  transition:transform .4s;}
+.rpk:after {content:''; position:absolute; inset:0; z-index:-1; background:linear-gradient(90deg, rgba(0,0,0,.8) 0%, rgba(0,0,0,.45) 45%, rgba(0,0,0,0) 100%);}
+.rpk:hover:before {transform:scale(1.05);}
 .stMarkdown a.rpk {color:#fff !important;}
 .rpk {display:flex; align-items:center; gap:12px; padding:12px 14px; border-radius:12px; background:#000; min-width:0;
   border:1px solid rgba(255,255,255,.35); transition:transform .12s, border-color .12s, box-shadow .12s;}
@@ -1908,7 +1913,7 @@ a.rt:hover img {transform:translateX(-50%) scale(1.04);}
   background:linear-gradient(115deg, color-mix(in srgb, var(--c) 85%, #000) 0%, color-mix(in srgb, var(--c) 30%, #0b0d12) 50%, #0b0d12 100%);
   border:1px solid var(--line);}
 .rhead:before {content:attr(data-n); position:absolute; right:30px; top:-30px; font:900 italic 260px/1 var(--D); color:rgba(255,255,255,.07);}
-.rhead img {height:240px; width:auto; position:relative; filter:drop-shadow(0 10px 30px rgba(0,0,0,.6));}
+.rhead img {height:440px; margin-bottom:-180px; width:auto; position:relative; filter:drop-shadow(0 10px 30px rgba(0,0,0,.6));}
 .rhead .i {padding-bottom:22px; min-width:0; position:relative;}
 .rhead .fn {font:600 18px var(--B); color:#e6e9ef; text-transform:uppercase; letter-spacing:3px;}
 .rhead h1 {font:900 italic 64px/.9 var(--D) !important; color:#fff !important; margin:0 !important; padding:0 !important;
@@ -1943,7 +1948,7 @@ a.nw:hover {transform:translateY(-3px);}
 .nwx > input:checked ~ label, .all .nwx > label {display:none;}
 .shield {background:linear-gradient(90deg, rgba(225,6,0,.18), rgba(225,6,0,.04)); border:1px solid rgba(225,6,0,.35); border-radius:12px;
   padding:12px 16px; margin:6px 0 12px; font-size:14px;}
-.foot {color:#5d6574; font-size:12px; text-align:center; margin:40px 0 10px;}
+.foot {color:#838b99; font-size:12px; text-align:center; margin:40px 0 10px;}
 .foot .kerb {margin:0 auto 14px; width:120px; height:4px; transform:skewX(-20deg);}
 [data-testid="stExpander"] details {background:var(--card); border:1px solid var(--line) !important; border-radius:12px !important;}
 [data-testid="stExpander"] summary p {font:800 18px var(--D) !important; text-transform:uppercase; letter-spacing:.4px;}
@@ -2037,7 +2042,7 @@ a.nw:hover {transform:translateY(-3px);}
   .st-key-tools label p {font-size:13px !important;}
   .st-key-tools [data-testid="stTooltipIcon"], .st-key-tools [data-testid="stTooltipHoverTarget"] {display:none !important;}
   /* --- replays --- */
-  .rpg {grid-template-columns:1fr 1fr; gap:8px;}
+  .rpg {gap:8px;} .rpk {flex:1 1 140px; max-width:calc(50% - 4px); min-height:64px;}
   .rpk {padding:10px; gap:8px;} .rpk .pl {width:30px; height:30px;} .rpk .pl:after {left:12px; top:8px; border-left-width:10px; border-top-width:7px; border-bottom-width:7px;}
   .rpk .tx b {font-size:17px;} .rpk .tx i {font-size:9px; letter-spacing:.8px;} .rpk small {display:none;}
   /* --- catégories en onglets pleine largeur --- */
@@ -2109,7 +2114,7 @@ a.nw:hover {transform:translateY(-3px);}
   table.std th {font-size:10px; letter-spacing:.4px;}
   /* --- fiche pilote --- */
   .rhead {flex-direction:column-reverse; align-items:stretch; padding:16px 16px 0 !important; min-height:0;}
-  .rhead img {height:270px !important; align-self:center; margin-top:-10px;}
+  .rhead img {height:270px !important; align-self:center; margin-top:-10px; margin-bottom:0 !important;}
   .rhead .i {padding-bottom:6px;}
   .rhead h1 {font-size:clamp(26px, 10vw, 46px) !important; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
   .rhead .fn {font-size:14px;} .rhead .s {font-size:13px;} .rhead:before {font-size:180px !important;}
@@ -2119,6 +2124,32 @@ a.nw:hover {transform:translateY(-3px);}
   /* --- lisibilité --- */
   .note, .sec small {font-size:13px;}
   .mini .l .g {font-size:12px;}
+}
+
+/* ---------- PC (retours de l'audit) ---------- */
+.ses .t .dd {display:block; font:700 10px/1.2 var(--B); font-style:normal; color:var(--mu); letter-spacing:1px; text-transform:uppercase;}
+.z {color:rgba(255,255,255,.16);}
+.cutpill {display:inline-block; margin:2px 0 12px; padding:5px 12px; border-radius:20px; font-size:12px; color:#c9ced8;
+  background:rgba(225,6,0,.1); border:1px solid rgba(225,6,0,.3);}
+.card.tms {max-width:760px;}
+[data-testid="stDownloadButton"] button {background:transparent !important; border:1px solid var(--red) !important; color:#fff !important;
+  border-radius:6px !important; transform:skewX(-10deg);}
+[data-testid="stDownloadButton"] button p {font:800 14px var(--D) !important; text-transform:uppercase; letter-spacing:.8px;}
+[data-testid="stDownloadButton"] button:hover {background:var(--red) !important;}
+.st-key-gptop [data-testid="stColumn"]:last-child {display:flex; justify-content:flex-end;}
+.st-key-gptop .st-key-tools {width:auto !important;}
+@media (min-width: 701px) {
+  .tl {grid-template-columns:repeat(4, minmax(0, 1fr)) !important; gap:12px !important; align-items:start;}
+  .tl .day {display:contents;}
+  .tl .dh {display:none;}
+  .know {grid-template-columns:1fr 1fr;}
+  .know .card.full {grid-column:auto;}
+}
+@media (min-width: 701px) and (max-width: 1000px) {
+  .tl {grid-template-columns:repeat(2, minmax(0, 1fr)) !important;}
+}
+@media (max-width: 700px) {
+  .ses .t .dd {display:none;}
 }
 </style>
 """
@@ -2155,7 +2186,7 @@ def mini_result(rows, fav=None, race=True):
     return f"<div class='mini'><div class='ml'>{''.join(out)}</div>{more}</div>"
 
 
-def session_tile(ev, s, rows, zone, fav, show_idx, stakes, grid=None, today=None, extra=""):
+def session_tile(ev, s, rows, zone, fav, show_idx, stakes, grid=None, today=None, extra="", day=""):
     live = session_live(s)
     race = s["code"] in ("SPR", "RAC")
     cls = "ses" + (" race" if race else " q" if s["group"] == "q" else "") + (" live" if live else "")
@@ -2185,7 +2216,7 @@ def session_tile(ev, s, rows, zone, fav, show_idx, stakes, grid=None, today=None
         body = f"<div class='body'>{hidden('Classement en direct', mini_result(rows, fav, race))}</div>"
     elif session_done(s):
         body = extra + "<div class='wt note'>Résultat pas encore publié</div>"
-    return (f"<div class='{cls}'><div class='top'><span class='t'>{hm(s['utc'], zone)}</span>"
+    return (f"<div class='{cls}'><div class='top'><span class='t'><i class='dd'>{esc(day)}</i>{hm(s['utc'], zone)}</span>"
             f"<span class='nm'>{esc(s['label'])}<small class='{subcls}'>{esc(' · '.join(sub))}</small></span><span class='st'>{state}</span></div>"
             f"{body}</div>")
 
@@ -2200,7 +2231,8 @@ def timeline(ev, sess, res, zone, fav, show_idx, stakes, cat="MotoGP", pays="FR"
     cols = []
     for d in sorted(days):
         tiles = "".join(session_tile(ev, s, res.get(s["code"]) or [], zone, fav, show_idx, stakes,
-                                     grid if s["code"] in ("SPR", "RAC") else None) for s in days[d])
+                                     grid if s["code"] in ("SPR", "RAC") else None,
+                                     day=f"{JOURS[d.weekday()][:3]}. {day_num(d)}") for s in days[d])
         cls = "dh today" if d == today else "dh"
         wx = next((x for x in days[d] if x.get("weather") and session_done(x)), None)  # météo du jour (téléphone)
         dwx = f"<i class='dwx'>{esc(wx['weather'])}{' · ' + esc(wx['air']) if wx.get('air') else ''}</i>" if wx else ""
@@ -2328,7 +2360,8 @@ def replay_buttons(ev, s, cat, pays):
     mins = f"<small>{canal['mins']} min</small>" if canal and canal.get("mins") else ""
     what = ("Sprint" if kind == "sprint" else "Grand Prix") if cat == "MotoGP" else f"Course {cat}"
     main = " main" if cat == "MotoGP" else ""
-    return (f"<a class='rpk{main}' href='{esc(href)}' target='_blank' rel='noopener'><span class='pl'></span>"
+    img = event_meta(ev).get("top") or event_meta(ev).get("bg") or ""
+    return (f"<a class='rpk{main}' href='{esc(href)}' target='_blank' rel='noopener' style=\"--img:url('{esc(img)}')\"><span class='pl'></span>"
             f"<span class='tx'><i>Résumé CANAL+</i><b>{esc(what)}</b></span>{mins}</a>")
 
 
@@ -2526,12 +2559,15 @@ def gp_page(ctx):
     i = evs.index(ev)
     prv = link(f"vue=gp&gp={evs[i - 1]['code']}", f"<span>‹</span><em>{esc(gp_short(evs[i - 1]))}</em>", "gpn") if i > 0 else "<span></span>"
     nxt = link(f"vue=gp&gp={evs[i + 1]['code']}", f"<em>{esc(gp_short(evs[i + 1]))}</em><span>›</span>", "gpn r") if i < len(evs) - 1 else "<span></span>"
-    st.markdown(f"<div class='gpbar'>{prv}{link('vue=calendrier', '📅<em> Tous les GP</em>', 'gpn c')}{nxt}</div>", unsafe_allow_html=True)
     cat_ids, results, cut = ctx["cat_ids"], ctx["results"], ctx["cut"]
     wk = weekend(ev, cat_ids)
     msess = wk.get("MotoGP") or []
+    with st.container(key="gptop"):
+        c_nav, c_tog = st.columns([5, 1.3], vertical_alignment="center")
+    c_nav.markdown(f"<div class='gpbar'>{prv}{link('vue=calendrier', '📅<em> Tous les GP</em>', 'gpn c')}{nxt}</div>", unsafe_allow_html=True)
+    with c_tog:
+        allcls = reveal_toggle(f"reveal_{ev['code']}", ctx, ev, wk)
     st.markdown(gp_hero(ev, msess, zone, total=len(evs)), unsafe_allow_html=True)
-    allcls = reveal_toggle(f"reveal_{ev['code']}", ctx, ev, wk)
     rp = replays_block(ev, wk, ss.opts["pays"])
     if rp:
         st.markdown(sec_title("Les replays", "résumés CANAL+ Sport, en français") + rp, unsafe_allow_html=True)
@@ -2634,7 +2670,7 @@ def calendar_page(ctx):
             rows = "".join(f"<tr class='{'race' if s['code'] in ('SPR', 'RAC') else ''}'><td class='n'>{esc(s['label'])}</td>"
                            f"<td>{when_txt(s['utc'], zone)}</td><td class='note'>{countdown(s['utc']) if s['utc'] > now_utc() else ''}</td></tr>"
                            for s in sess)
-            st.markdown(f"<div class='card'><table class='times'>{rows}</table></div>", unsafe_allow_html=True)
+            st.markdown(f"<div class='card tms'><table class='times'>{rows}</table></div>", unsafe_allow_html=True)
             st.download_button("📅 Ajouter les séances à mon agenda", ics_calendar(nxt, sess), file_name=f"motogp_{nxt['code']}.ics",
                                mime="text/calendar", key="ics")
     if past:
@@ -2663,6 +2699,11 @@ def cut_note(cut, ctx):
     parts = [GROUP_FR[g] for g in "qsr" if any(k.endswith(g) for k in cut)]
     what = " et ".join([", ".join(parts[:-1]), parts[-1]]) if len(parts) > 1 else parts[0]
     return f"Sans spoil : arrêté avant {what} du {ev['name'] if ev else 'dernier GP'} (pas encore ouvert sur cet appareil)."
+
+
+def zp(v):
+    """Un zéro s'efface (gris pâle) pour laisser ressortir les vrais résultats."""
+    return "<span class='z'>0</span>" if not v else str(v)
 
 
 def standings_page(ctx):
@@ -2714,8 +2755,8 @@ def standings_page(ctx):
             rows.append(f"<tr class='{'fav' if t['rid'] == fav else ''}'><td class='rk'>{t['rank']}</td>"
                         f"<td class='l'>{rider_cell(t['row'])}</td><td class='pts' style='--c:{col}'>{t['pts']}"
                         f"<span class='bar' style='width:{max(4, round(100 * t['pts'] / lead))}%'></span></td>"
-                        f"<td class='hm'>{'–' if not t['gap'] else '-' + str(t['gap'])}</td><td class='hm'>{t['wins']}</td><td class='hm'>{t['pod']}</td>"
-                        f"<td class='hm'>{t['swins']}</td><td class='hm'>{t['poles']}</td><td class='l'>{''.join(last)}</td></tr>")
+                        f"<td class='hm'>{'–' if not t['gap'] else '-' + str(t['gap'])}</td><td class='hm'>{zp(t['wins'])}</td><td class='hm'>{zp(t['pod'])}</td>"
+                        f"<td class='hm'>{zp(t['swins'])}</td><td class='hm'>{zp(t['poles'])}</td><td class='l'>{''.join(last)}</td></tr>")
         st.markdown(f"<div class='card scroll'><table class='std'>{head_}{''.join(rows)}</table></div>", unsafe_allow_html=True)
         st.caption("Sprint (MotoGP) et course comptent · « Sprints » = victoires en sprint.")
     else:
@@ -2803,7 +2844,7 @@ def rider_page(ctx, rid):
                 f"<div class='s'>{age}{born}{' · en Grand Prix depuis ' + str(info['start']) if info.get('start') else ''}</div></div></div>",
                 unsafe_allow_html=True)
     if cut:
-        st.markdown(f"<p class='note'>{esc(cut_note(cut, ctx))}</p>", unsafe_allow_html=True)
+        st.markdown(f"<div class='cutpill'>🛡️ {esc(cut_note(cut, ctx))}</div>", unsafe_allow_html=True)
     rows = rider_results(results, rid, cut)
     if me:
         tiles = [(nth(me["rank"]), "au championnat"), (me["pts"], "points"), (me["wins"], "victoires"), (me["pod"], "podiums"),

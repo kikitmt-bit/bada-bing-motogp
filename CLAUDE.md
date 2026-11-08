@@ -129,3 +129,11 @@ Tout dans le bloc `@media (max-width: 700px)` de fin de CSS ; le PC ne change pr
 - Fiche pilote : en-tête vertical (nom jamais coupé, `clamp`), stats en rangée qui défile, courbe lisible (`.xl` masqués,
   `.yl` agrandis), « GP par GP » avec noms courts (`gp_short`). Lien « ‹ Tous les pilotes » au style du site.
 - Bande de navigation des GP : noms courts (« ‹ Malaisie · 📅 · Portugal › »).
+
+## v-m023 : audit PC
+- « Tout dévoiler » sur la ligne de navigation au-dessus de la bannière (`gptop`, colonnes) ; sur téléphone il reste flottant.
+- Replays : tuiles avec la photo du GP (`.rpk` + `--img`), en flex (2 max par ligne quand il y en a peu).
+- Frise sur PC : grille de 4 séances par ligne, ordre chronologique (`.tl .day {display:contents}`), jour dans chaque tuile (`.dd`).
+- « Ce qu'il faut savoir » : grille 2 × 2 régulière sur PC. Classement : zéros en gris pâle (`zp`), barre de points plus épaisse.
+- Calendrier : horaires en carte compacte (`.card.tms`), bouton agenda au style du site. Fiche pilote : photo tête + buste agrandie,
+  note sans spoil en étiquette (`.cutpill`). Page élargie à 1440 px, pied de page plus lisible.
