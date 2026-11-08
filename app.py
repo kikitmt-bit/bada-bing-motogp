@@ -27,7 +27,7 @@ try:
 except Exception:  # pragma: no cover
     components = None
 
-APP_VERSION = "2026-11-m003"
+APP_VERSION = "2026-11-m004"
 HERE = os.path.dirname(os.path.abspath(__file__))
 CACHE_DIR = os.path.join(HERE, ".cache")
 log = logging.getLogger("motogp")
@@ -713,14 +713,38 @@ def news(_bucket=None):
             desc = strip_html(it.findtext("description") or "")
             desc = re.sub(r"\s*(Continuez de lire|Lire la suite|The post .*)$", "", desc)
             if not img:
-                m = re.search(r"<img[^>]+src=[\"']([^\"']+)", it.findtext("description") or "")
+                body = (it.findtext("{http://purl.org/rss/1.0/modules/content/}encoded") or "") + (it.findtext("description") or "")
+                m = re.search(r"<img[^>]+src=[\"']([^\"']+)", body)
                 img = m.group(1) if m else ""
             items.append({"title": title, "link": (it.findtext("link") or "").strip(), "pub": pub.isoformat() if pub else "",
                           "desc": desc[:280], "img": img, "source": source})
     items.sort(key=lambda x: x["pub"], reverse=True)
+    missing = [x for x in items[:60] if not x["img"] and x["link"]]
+    if missing:  # image de l'article (balise og:image de la page)
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            for x, im in zip(missing, pool.map(og_image, [x["link"] for x in missing])):
+                x["img"] = im
     if items:
         disk_put("news.json", items)
     return items or disk_get("news.json") or []
+
+
+_OG = {}
+
+
+def og_image(url):
+    """Image principale d'un article (og:image), gardée en mémoire et sur disque."""
+    if not _OG:
+        _OG.update(disk_get("og.json") or {})
+    if url in _OG:
+        return _OG[url]
+    text = get_text(url, timeout=8, headers={"User-Agent": "Mozilla/5.0"})
+    m = re.search(r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)', text) or \
+        re.search(r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:image', text)
+    _OG[url] = html.unescape(m.group(1)) if m else ""
+    if text:
+        disk_put("og.json", dict(list(_OG.items())[-400:]))
+    return _OG[url]
 
 
 def spoil_since(results, seen, show_all):
@@ -1089,10 +1113,12 @@ def uid(prefix="t"):
     return f"{prefix}{_UID[0]}"
 
 
-def hidden(label, content, cls="tg"):
-    """Bloc caché par une case à cocher CSS (jamais `checked` dans le HTML : React la verrouillerait)."""
+def hidden(label, content, cls="tg", seen=""):
+    """Bloc caché par une case à cocher CSS (jamais `checked` dans le HTML : React la verrouillerait).
+    `seen` : clés « 26QATr » notées comme vues par le navigateur quand on dévoile (pour le classement sans spoil)."""
     i = uid("h")
-    return (f"<div class='hb'><input type='checkbox' id='{i}' class='{cls}'>"
+    k = f" data-k='{esc(seen)}'" if seen else ""
+    return (f"<div class='hb'{k}><input type='checkbox' id='{i}' class='{cls}'>"
             f"<label for='{i}' class='hbl'><span>👁</span>{label}</label><label for='{i}' class='hbc'>🙈 Cacher</label>"
             f"<div class='hbx'>{content}</div></div>")
 
@@ -1189,6 +1215,19 @@ P.__gpClick = e => {{
   D.querySelector('[data-testid="stMain"]')?.scrollTo({{top: 0}});
 }};
 D.addEventListener('click', P.__gpClick, true);
+if (P.__gpChange) D.removeEventListener('change', P.__gpChange, true);
+P.__gpChange = e => {{  // résultat dévoilé : la séance est notée « vue » (classement sans spoil à jour à la prochaine visite)
+  const i = e.target, box = i.checked && i.closest && i.closest('[data-k]');
+  if (!box) return;
+  const ck = n => (D.cookie.split('; ').find(c => c.startsWith(n + '=')) || '').slice(n.length + 1);
+  let cur = ck('gp_vues'); try {{ cur = cur || P.localStorage.getItem('gp_vues') || ''; }} catch (x) {{}}
+  const all = new Set(cur.split('.').filter(Boolean));
+  box.dataset.k.split(' ').forEach(k => k && all.add(k));
+  const v = [...all].slice(-120).join('.');
+  D.cookie = 'gp_vues=' + v + '; path=/; max-age=31536000; SameSite=Lax';
+  try {{ P.localStorage.setItem('gp_vues', v); }} catch (x) {{}}
+}};
+D.addEventListener('change', P.__gpChange, true);
 if (P.__gpAway) D.removeEventListener('visibilitychange', P.__gpAway);
 clearInterval(P.__gpTick);
 P.__gpAway = () => {{
@@ -1236,7 +1275,7 @@ def apply_restore(q):
 
 
 VIEWS = ("brief", "gp", "calendrier", "classement", "pilotes", "actus")
-TABS = [("brief", "Le brief", ":material/bolt:"), ("gp", "Grand Prix", ":material/sports_motorsports:"),
+TABS = [("gp", "Grand Prix", ":material/sports_motorsports:"),
         ("calendrier", "Calendrier", ":material/calendar_month:"), ("classement", "Classement", ":material/emoji_events:"),
         ("pilotes", "Pilotes", ":material/groups:"), ("actus", "Actus", ":material/newspaper:")]
 
@@ -1254,7 +1293,7 @@ def apply_go(cmd):
     if q.get("cat") in CATS:
         ss.cat = q["cat"]
     if q.get("vue") in VIEWS:
-        ss.view = q["vue"]
+        ss.view = "gp" if q["vue"] == "brief" else q["vue"]
 
 
 # =========================================================================
@@ -1275,6 +1314,9 @@ html, body, [data-testid="stAppViewContainer"], .stApp {background:
 .stApp, .stMarkdown, .stMarkdown p, .stMarkdown div {font-family:var(--B);}
 .block-container {max-width:1280px; padding-top:1rem !important; padding-bottom:2rem !important;}
 header[data-testid="stHeader"] {height:0; background:transparent;}
+[data-testid="stToolbar"], [data-testid="stToolbarActions"], [data-testid="stAppDeployButton"], .stAppDeployButton,
+[data-testid="stDecoration"], [data-testid="stStatusWidget"], [class*="viewerBadge"], [data-testid="manage-app-button"],
+#MainMenu, footer {display:none !important; visibility:hidden !important;}
 div[data-testid="stElementContainer"]:has(> iframe[data-testid="stIFrame"]), div:has(> .st-key-gobox) {
   position:absolute !important; width:1px; height:1px; overflow:hidden; left:-9999px;}
 .st-key-gobox {position:absolute !important; left:-9999px; top:0; width:1px; height:1px; overflow:hidden;}
@@ -1292,6 +1334,10 @@ div[data-testid="stElementContainer"]:has(> iframe[data-testid="stIFrame"]), div
 .brand .sl {width:46px; height:22px; transform:skewX(-20deg);
   background:repeating-linear-gradient(90deg, var(--red) 0 6px, transparent 6px 10px);}
 .brand small {color:var(--mu); font:600 12px var(--B); letter-spacing:3px; text-transform:uppercase; margin-left:4px;}
+.st-key-gpnav [data-testid="stHorizontalBlock"] {flex-wrap:nowrap !important; gap:8px;}
+.st-key-gpnav [data-testid="stColumn"]:first-child, .st-key-gpnav [data-testid="stColumn"]:last-child {flex:0 0 52px !important;
+  min-width:52px !important; width:52px !important;}
+.st-key-gpnav [data-testid="stColumn"]:nth-child(2) {flex:1 1 auto !important; min-width:0 !important; width:auto !important;}
 .st-key-tabs {position:sticky; top:0; z-index:50; padding:6px 0; margin-bottom:6px;
   background:linear-gradient(180deg, rgba(6,7,10,.97), rgba(6,7,10,.9)); backdrop-filter:blur(8px); border-bottom:1px solid var(--line);}
 .st-key-tabs button {white-space:nowrap; font-family:var(--D) !important; letter-spacing:.5px; border-radius:6px !important;
@@ -1322,8 +1368,8 @@ div[data-testid="stElementContainer"]:has(> iframe[data-testid="stIFrame"]), div
 .hero:before {content:''; position:absolute; inset:0; z-index:-1;
   background:linear-gradient(90deg, rgba(4,5,8,.97) 0%, rgba(4,5,8,.85) 38%, rgba(4,5,8,.35) 70%, rgba(4,5,8,.6) 100%),
              linear-gradient(0deg, rgba(4,5,8,.95) 0%, transparent 45%);}
-.hero-in {display:flex; justify-content:space-between; gap:20px; padding:28px 32px 18px; min-height:290px;}
-.hero-l {min-width:0; display:flex; flex-direction:column; gap:8px;}
+.hero-in {display:flex; justify-content:space-between; align-items:center; gap:20px; padding:28px 32px 18px; min-height:330px;}
+.hero-l {min-width:0; flex:1 1 54%; display:flex; flex-direction:column; gap:8px;}
 .rnd {display:inline-flex; align-items:center; gap:8px; align-self:flex-start; background:var(--red); color:#fff;
   padding:4px 14px 4px 12px; transform:skewX(-14deg); font:800 13px var(--D); letter-spacing:2px; text-transform:uppercase;}
 .rnd b {font:900 italic 20px/1 var(--D);} .rnd i {opacity:.7; font-style:normal;}
@@ -1336,8 +1382,9 @@ div[data-testid="stElementContainer"]:has(> iframe[data-testid="stIFrame"]), div
 .hstate {display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:4px;}
 .hcd {font:800 italic 20px var(--D); color:#fff; text-transform:uppercase; letter-spacing:.5px;}
 .hcd span {color:var(--red2);}
-.hero-r {flex:0 0 300px; display:flex; align-items:center; justify-content:center; position:relative;}
-.hero-r img {width:280px; max-width:100%; filter:drop-shadow(0 0 14px rgba(225,6,0,.75)) drop-shadow(0 0 2px #fff); opacity:.95;}
+.hero-r {flex:0 0 44%; min-height:300px; align-self:stretch; display:flex; align-items:center; justify-content:center; position:relative; margin:-18px 0;}
+.hero-r img {position:absolute; inset:0; margin:auto; width:100%; height:100%; max-width:520px; object-fit:contain;
+  filter:drop-shadow(0 0 3px #fff) drop-shadow(0 0 16px rgba(225,6,0,.9)) drop-shadow(0 0 40px rgba(225,6,0,.45));}
 .hstats {display:grid; grid-template-columns:repeat(5, 1fr); border-top:1px solid rgba(255,255,255,.1);
   background:rgba(0,0,0,.55); backdrop-filter:blur(6px);}
 .hstats div {padding:12px 16px; border-right:1px solid rgba(255,255,255,.08); min-width:0;}
@@ -1399,6 +1446,14 @@ div[data-testid="stElementContainer"]:has(> iframe[data-testid="stIFrame"]), div
 .ses .wt {font-size:13px; margin-top:8px; white-space:nowrap;}
 .ses .body {margin-top:8px;}
 .ses .done {color:var(--ok); font-weight:700; font-size:18px;}
+.rpbs {display:flex; gap:6px; margin-top:10px; flex-wrap:wrap;}
+.rpb {display:inline-flex; align-items:center; gap:5px; padding:7px 12px; border-radius:6px; font:700 13px var(--B); white-space:nowrap;
+  color:#fff !important; transition:transform .12s, box-shadow .12s;}
+.rpb:hover {transform:translateY(-1px);}
+.rpb.canal {background:#000; border:1px solid rgba(255,255,255,.55); box-shadow:0 4px 16px rgba(0,0,0,.4);}
+.rpb.canal b {font-weight:900; letter-spacing:.5px;}
+.rpb.off {background:var(--red); box-shadow:0 4px 16px rgba(225,6,0,.35);}
+.rpb small {opacity:.75; font-weight:500;}
 /* ---------- blocs cachés ---------- */
 .hb {position:relative;}
 .hb > input {position:absolute; opacity:0; pointer-events:none;}
@@ -1415,17 +1470,22 @@ div[data-testid="stElementContainer"]:has(> iframe[data-testid="stIFrame"]), div
 .all .hbl, .all .hbc {display:none !important;}
 @keyframes rise {from {opacity:0; transform:translateY(4px);} to {opacity:1; transform:none;}}
 /* ---------- résultats ---------- */
-.mini {display:flex; flex-direction:column; gap:6px; padding-top:18px;}
-.mini .l {display:flex; align-items:center; gap:9px; font-size:14px; white-space:nowrap; min-width:0;}
+.mini {position:relative; padding-top:18px;}
+.mini .ml {display:flex; flex-direction:column; gap:6px; max-height:122px; overflow-y:auto; overscroll-behavior:contain;
+  padding-right:4px; scrollbar-width:thin; scrollbar-color:rgba(225,6,0,.6) transparent;}
+.mini .more {color:var(--mu); font-size:11px; text-align:center; margin-top:4px; text-transform:uppercase; letter-spacing:1px;}
+.mini .l {display:flex; align-items:center; gap:9px; font-size:14px; white-space:nowrap; min-width:0; flex:none; min-height:30px;}
+.mini .l .pt {width:22px; text-align:right; font:800 14px var(--D); color:#fff;}
+.mini .l.out {opacity:.6;}
 .mini .l .p {font:900 italic 20px var(--D); width:20px; text-align:center;}
 .mini .l.p1 .p {color:var(--gold);} .mini .l.p2 .p {color:var(--silver);} .mini .l.p3 .p {color:var(--bronze);}
 .mini .l .mn {overflow:hidden; text-overflow:ellipsis; font-weight:600; min-width:0; white-space:nowrap;}
 .mini .l .g {margin-left:auto; color:var(--mu); font-size:12px; font-variant-numeric:tabular-nums;}
 .mini .l.me .mn {color:var(--gold);}
-.hd {position:relative; flex:none; border-radius:50%; overflow:hidden; display:inline-flex; align-items:flex-end; justify-content:center;
+.hd {position:relative; flex:none; border-radius:50%; overflow:hidden; display:inline-flex; align-items:center; justify-content:center;
   background:radial-gradient(circle at 50% 30%, color-mix(in srgb, var(--c) 85%, #fff), var(--c) 60%, color-mix(in srgb, var(--c) 50%, #000));
   box-shadow:0 0 0 2px rgba(255,255,255,.12);}
-.hd img {width:118%; height:auto; margin-bottom:-12%; object-fit:cover;}
+.hd img {position:absolute; width:240%; max-width:none; height:auto; left:50%; top:3%; transform:translateX(-50%);}
 .hdn {align-items:center; color:#fff; font-family:var(--D); font-weight:900; font-style:italic;}
 table.res {width:100%; border-collapse:collapse; font-size:14px;}
 table.res th {text-align:left; color:var(--mu); font:600 11px var(--B); text-transform:uppercase; letter-spacing:1.2px; padding:8px;
@@ -1503,22 +1563,26 @@ table.res .pts {font:800 16px var(--D);}
 .nx .tms {display:flex; gap:18px; margin-top:12px; flex-wrap:wrap;}
 .nx .tms div {white-space:nowrap;} .nx .tms span {display:block; color:var(--mu); font-size:11px; text-transform:uppercase; letter-spacing:1.2px;}
 .nx .tms b {font-size:20px; margin:0;}
-.nx img.trk {position:absolute; right:18px; bottom:14px; width:130px; filter:drop-shadow(0 0 8px rgba(225,6,0,.8)); opacity:.9;}
+.nx img.trk {position:absolute; right:24px; top:50%; transform:translateY(-50%); width:38%; max-width:300px; max-height:85%;
+  object-fit:contain; filter:drop-shadow(0 0 3px #fff) drop-shadow(0 0 14px rgba(225,6,0,.9));}
 /* ---------- calendrier ---------- */
 .cal {display:grid; grid-template-columns:repeat(auto-fill, minmax(290px, 1fr)); gap:14px;}
-.cc {position:relative; display:block; border-radius:14px; overflow:hidden; min-height:170px; isolation:isolate; border:1px solid var(--line);
+.cc {position:relative; display:block; border-radius:14px; overflow:hidden; min-height:210px; isolation:isolate; border:1px solid var(--line);
   transition:transform .15s, box-shadow .15s;}
-.cc:before {content:''; position:absolute; inset:0; z-index:-2; background:var(--img) center/cover; filter:brightness(.55) saturate(1.1);
+.cc:before {content:''; position:absolute; inset:0; z-index:-2; background:var(--img) center/cover; filter:brightness(.95) saturate(1.1);
   transition:transform .4s;}
-.cc:after {content:''; position:absolute; inset:0; z-index:-1; background:linear-gradient(0deg, rgba(0,0,0,.95) 15%, rgba(0,0,0,.15) 75%);}
+.cc:after {content:''; position:absolute; inset:0; z-index:-1;
+  background:linear-gradient(0deg, rgba(0,0,0,.92) 0%, rgba(0,0,0,.55) 38%, rgba(0,0,0,.05) 72%),
+             linear-gradient(90deg, transparent 50%, rgba(0,0,0,.45) 100%);}
 a.cc:hover {transform:translateY(-3px); box-shadow:0 16px 40px rgba(0,0,0,.6);}
 a.cc:hover:before {transform:scale(1.05);}
-.cc.done:before {filter:brightness(.35) grayscale(.8);}
+.cc.done:before {filter:brightness(.85) grayscale(.35);}
 .cc.next {box-shadow:0 0 0 2px var(--red), 0 18px 50px rgba(225,6,0,.3);}
 .cc.live {box-shadow:0 0 0 2px var(--red);}
 .cc .r {position:absolute; top:8px; left:14px; font:900 italic 46px/1 var(--D); color:rgba(255,255,255,.9); text-shadow:0 4px 18px rgba(0,0,0,.6);}
 .cc .stt {position:absolute; top:12px; right:12px;}
-.cc .trk {position:absolute; right:12px; bottom:56px; width:84px; opacity:.85; filter:drop-shadow(0 0 6px rgba(225,6,0,.7));}
+.cc .trk {position:absolute; right:10px; top:44px; width:58%; max-width:240px; max-height:140px; object-fit:contain;
+  filter:drop-shadow(0 0 2px #fff) drop-shadow(0 0 10px rgba(225,6,0,.9));}
 .cc .b {position:absolute; left:14px; right:14px; bottom:12px;}
 .cc .b .f {display:flex; align-items:center; gap:8px; color:#d0d5de; font-size:12px; text-transform:uppercase; letter-spacing:1.2px;}
 .cc .b .f img {height:14px; border-radius:2px;}
@@ -1530,6 +1594,19 @@ a.cc:hover:before {transform:scale(1.05);}
 .times td.n {font:800 18px var(--D); text-transform:uppercase;}
 .times tr.race td {background:rgba(225,6,0,.08);} .times tr.race td.n {color:var(--red2);}
 /* ---------- classement ---------- */
+.top5 {display:grid; grid-template-columns:repeat(5, 1fr); gap:12px; margin-bottom:16px;}
+.t5 {position:relative; border-radius:16px; overflow:hidden; height:330px; border:1px solid var(--line); min-width:0;
+  background:linear-gradient(170deg, color-mix(in srgb, var(--c) 80%, #000) 0%, color-mix(in srgb, var(--c) 30%, #0b0d12) 60%, #0b0d12 100%);}
+.t5:before {content:attr(data-n); position:absolute; left:0; right:0; top:6px; text-align:center; font:900 italic 150px/1 var(--D);
+  color:rgba(255,255,255,.1);}
+.t5 .p {position:absolute; top:10px; left:12px; font:900 italic 40px/1 var(--D); z-index:2;}
+.t5.r1 .p {color:var(--gold);} .t5.r2 .p {color:var(--silver);} .t5.r3 .p {color:var(--bronze);}
+.t5 img {position:absolute; left:50%; transform:translateX(-50%); bottom:92px; height:220px; width:auto;
+  filter:drop-shadow(0 10px 20px rgba(0,0,0,.6));}
+.t5 .b {position:absolute; left:0; right:0; bottom:0; padding:10px 12px 12px; background:linear-gradient(0deg, rgba(0,0,0,.95), rgba(0,0,0,.6));}
+.t5 .n {font:900 italic 21px/1 var(--D); text-transform:uppercase; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+.t5 .tm {color:#c3c9d3; font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:2px;}
+.t5 .pts {font:900 italic 28px/1 var(--D); margin-top:6px; white-space:nowrap;} .t5 .pts small {font-size:13px; color:var(--mu);}
 .top3 {display:grid; grid-template-columns:repeat(3, 1fr); gap:12px; margin-bottom:16px;}
 .t3 {position:relative; border-radius:16px; overflow:hidden; min-height:200px; border:1px solid var(--line); display:flex; align-items:flex-end;
   background:linear-gradient(160deg, color-mix(in srgb, var(--c) 75%, #000), #0b0d12 80%);}
@@ -1621,12 +1698,13 @@ a.nw:hover {transform:translateY(-3px);}
   .brand .lg {font-size:24px;} .brand small {display:none;}
   .hero-in {flex-direction:column; padding:20px 18px 14px; min-height:0;}
   .hero h1 {font-size:44px;}
-  .hero-r {position:absolute; right:-20px; top:10px; flex:none; opacity:.55;} .hero-r img {width:150px;}
+  .hero-r {position:absolute; right:-40px; top:0; bottom:0; width:70%; min-height:0; margin:0; flex:none; opacity:.4; z-index:-1;}
   .hstats b {font-size:19px;} .hstats b small {display:none;} .hstats div {padding:10px;}
   .hstats span {font-size:9px; letter-spacing:.6px; overflow:hidden; text-overflow:ellipsis; display:block;}
   .brand .sl {display:none;}
   .bf-grid {grid-template-columns:1fr;}
-  .top3 {grid-template-columns:1fr;} .t3 {min-height:150px;} .t3 img {height:150px;}
+  .top5 {grid-template-columns:none; grid-auto-flow:column; grid-auto-columns:46%; overflow-x:auto; scrollbar-width:none;}
+  .t5 {height:280px;} .t5 img {height:180px;} .t5:before {font-size:110px;}
   .rg {grid-template-columns:repeat(2, 1fr);} .rt {height:230px;} .rt img {height:150px;} .rt .n {font-size:70px;}
   .rhead {padding:14px 14px 0; gap:10px;} .rhead img {height:150px;} .rhead h1 {font-size:38px;} .rhead:before {font-size:150px;}
   .rn .tm {max-width:140px;}
@@ -1648,27 +1726,29 @@ def page_footer():
 # =========================================================================
 # MORCEAUX DU WEEK-END
 # =========================================================================
-def mini_result(rows, fav=None, n=3, race=True):
-    """Les 3 premiers (+ mon pilote), avec la tête du pilote."""
+def mini_result(rows, fav=None, race=True):
+    """Classement complet de la séance, dans la tuile : les 3 premiers visibles, le reste en faisant défiler."""
     out = []
-    shown = [r for r in rows if r["pos"] and r["pos"] <= n]
-    me = next((r for r in rows if fav and r["rid"] == fav), None)
-    for r in shown + ([me] if me and me not in shown else []):
+    for r in rows:
         info = rider_of(r["rid"], r)
         if r["pos"]:
             g = "" if r["pos"] == 1 else (("+" + fr_num(r["gap"], 3)) if r["gap"] is not None else "")
-            if not race and r["pos"] == 1:
-                g = esc(r.get("best") or "")
+            if r["pos"] == 1:
+                g = esc(r.get("best") if not race else r.get("time")) or ""
+            if r.get("laps_down") and race:
+                g = f"+{r['laps_down']} t."
         else:
-            g = status_fr(r)
-        cls = f"l p{r['pos'] or 0}" + (" me" if me is r else "")
+            g = "ab." if r.get("status") != "NOTSTARTED" else "np"
+        pts = f"<span class='pt'>{r['points']}</span>" if race and r.get("points") else ("<span class='pt'></span>" if race else "")
+        cls = f"l p{r['pos'] or 0}" + (" me" if fav and r["rid"] == fav else "") + ("" if r["pos"] else " out")
         out.append(f"<div class='{cls}'><span class='p'>{r['pos'] or '–'}</span>{head(info, 30)}"
                    f"<span class='mn'>{flag(r['iso'])} {rider_link(r['rid'], esc(short_name(info, r)))}</span>"
-                   f"<span class='g'>{g}</span></div>")
-    return f"<div class='mini'>{''.join(out)}</div>"
+                   f"<span class='g'>{g}</span>{pts}</div>")
+    more = f"<div class='more'>↓ {len(rows) - 3} autres pilotes</div>" if len(rows) > 3 else ""
+    return f"<div class='mini'><div class='ml'>{''.join(out)}</div>{more}</div>"
 
 
-def session_tile(ev, s, rows, zone, fav, show_idx, stakes, grid=None, today=None):
+def session_tile(ev, s, rows, zone, fav, show_idx, stakes, grid=None, today=None, extra=""):
     live = session_live(s)
     race = s["code"] in ("SPR", "RAC")
     cls = "ses" + (" race" if race else " q" if s["group"] == "q" else "") + (" live" if live else "")
@@ -1683,6 +1763,7 @@ def session_tile(ev, s, rows, zone, fav, show_idx, stakes, grid=None, today=None
         sub.append(f"{s['weather']} · {TRACK_FR.get(norm(s['track']), 'piste ' + norm(s['track']))}" + (f" · {s['air']}" if s.get("air") else ""))
     elif not session_done(s) and s["utc"] > now_utc():
         sub.append(countdown(s["utc"]) + (" · horaire provisoire" if s.get("provisional") else ""))
+    key = seen_key(ev, s["group"]) if s["group"] else ""
     body = ""
     if session_done(s) and rows:
         wt = ""
@@ -1691,18 +1772,18 @@ def session_tile(ev, s, rows, zone, fav, show_idx, stakes, grid=None, today=None
             if lvl is not None:
                 ic, nm, _ = WATCH_LEVELS[lvl]
                 wt = f"<div class='wt'>{ic} <b>{nm}</b></div>"
-        body = wt + f"<div class='body'>{hidden('Voir le résultat', mini_result(rows, fav, 3, race))}</div>"
+        body = wt + extra + f"<div class='body'>{hidden('Voir le résultat', mini_result(rows, fav, race), seen=key)}</div>"
     elif live and rows:
-        body = f"<div class='body'>{hidden('Classement en direct', mini_result(rows, fav, 3, race))}</div>"
+        body = f"<div class='body'>{hidden('Classement en direct', mini_result(rows, fav, race))}</div>"
     elif session_done(s):
-        body = "<div class='wt note'>Résultat pas encore publié</div>"
+        body = extra + "<div class='wt note'>Résultat pas encore publié</div>"
     return (f"<div class='{cls}'><div class='top'><span class='t'>{hm(s['utc'], zone)}</span>"
             f"<span class='nm'>{esc(s['label'])}<small>{esc(' · '.join(sub))}</small></span><span class='st'>{state}</span></div>"
             f"{body}</div>")
 
 
-def timeline(ev, sess, res, zone, fav, show_idx, stakes):
-    """Le week-end en 3 colonnes : vendredi, samedi, dimanche."""
+def timeline(ev, sess, res, zone, fav, show_idx, stakes, cat="MotoGP", pays="FR"):
+    """Le week-end en 3 colonnes : vendredi, samedi, dimanche. Les courses portent leur bouton replay."""
     grid = grid_of(res)
     days = {}
     for s in sess:
@@ -1711,7 +1792,8 @@ def timeline(ev, sess, res, zone, fav, show_idx, stakes):
     cols = []
     for d in sorted(days):
         tiles = "".join(session_tile(ev, s, res.get(s["code"]) or [], zone, fav, show_idx, stakes,
-                                     grid if s["code"] in ("SPR", "RAC") else None) for s in days[d])
+                                     grid if s["code"] in ("SPR", "RAC") else None,
+                                     extra=replay_buttons(ev, s, cat, pays)) for s in days[d])
         cls = "dh today" if d == today else "dh"
         cols.append(f"<div class='day'><div class='{cls}'>{JOURS[d.weekday()]}<span>{day_num(d)} {MOIS[d.month - 1]}</span></div>{tiles}</div>")
     n = len(cols)
@@ -1762,43 +1844,23 @@ def gp_hero(ev, sess, zone, nev=None, total=22):
             f"<div class='hstate'>{pill}{cd}</div></div>{trk}</div>{hs}<div class='kerb'></div></div>")
 
 
-REPLAYS = [("MotoGP", "RAC", "race", "Le Grand Prix"), ("MotoGP", "SPR", "sprint", "Le sprint"),
-           ("Moto2", "RAC", "race", "La course Moto2"), ("Moto3", "RAC", "race", "La course Moto3")]
-
-
-def replays_html(ev, wk, zone, pays):
-    """Les replays du GP : CANAL+ Sport d'abord (en français), la vidéo officielle MotoGP en second."""
-    m = event_meta(ev)
-    img = m.get("top") or m.get("bg") or ""
-    cards = []
-    for cat, code, kind, label in REPLAYS:
-        s = next((x for x in wk.get(cat) or [] if x["code"] == code), None)
-        if not s:
-            continue
-        if not session_done(s):
-            if cat == "MotoGP":
-                cards.append(f"<div class='rp off' style=\"--img:url('{esc(img)}')\"><span class='src'>Bientôt</span>"
-                             f"<small>{esc(cat)}</small><b>{esc(label)}</b><div class='alt'>{when_txt(s['utc'], zone)}</div></div>")
-            continue
-        canal = find_video(ev, "canal", kind, cat)
-        off = find_video(ev, "motogp", kind) if cat == "MotoGP" else None
-        first_canal = pays == "FR" or not off
-        if first_canal:
-            href = yt_url(canal) if canal else canal_search_url(ev, kind, cat)
-            cls, src = ("rp canal" if canal else "rp canal find"), "CANAL+ Sport"
-            mins = canal.get("mins") if canal else None
-            alt_link = yt_url(off) if off else (official_search_url(ev, kind) if cat == "MotoGP" else "")
-            alt = f"<div class='alt'>Version officielle : <a href='{alt_link}' target='_blank' rel='noopener'>MotoGP ›</a></div>" if alt_link else ""
-        else:
-            href, cls, src, mins = yt_url(off), "rp motogp", "MotoGP™", off.get("mins")
-            alt_link = yt_url(canal) if canal else canal_search_url(ev, kind, cat)
-            alt = f"<div class='alt'>En français : <a href='{alt_link}' target='_blank' rel='noopener'>CANAL+ ›</a></div>"
-        dur = f"<span class='dur'>{mins} min</span>" if mins else ""
-        tip = "" if (canal if first_canal else off) else " title='Ouvre la recherche dans la chaîne : la vidéo sort en premier'"
-        cards.append(f"<div class='{cls}' style=\"--img:url('{esc(img)}')\"><a class='rpa' href='{esc(href)}' target='_blank' "
-                     f"rel='noopener'{tip}></a><span class='src'>{src}</span>{dur}<span class='play'></span>"
-                     f"<small>{esc(cat)} · résumé</small><b>{esc(label)}</b>{alt}</div>")
-    return f"<div class='rps'>{''.join(cards)}</div>" if cards else ""
+def replay_buttons(ev, s, cat, pays):
+    """Boutons replay d'une course finie : résumé CANAL+ Sport (en français) et version officielle MotoGP. Sans titre (spoil)."""
+    if s["code"] not in ("SPR", "RAC") or not session_done(s) or (cat != "MotoGP" and s["code"] != "RAC"):
+        return ""
+    kind = "sprint" if s["code"] == "SPR" else "race"
+    canal = find_video(ev, "canal", kind, cat)
+    off = find_video(ev, "motogp", kind) if cat == "MotoGP" else None
+    btns = []
+    c_href = yt_url(canal) if canal else canal_search_url(ev, kind, cat)
+    c_mins = f" <small>{canal['mins']} min</small>" if canal and canal.get("mins") else ""
+    c_btn = (f"<a class='rpb canal' href='{esc(c_href)}' target='_blank' rel='noopener'>▶ Résumé <b>CANAL+</b>{c_mins}</a>")
+    o_btn = ""
+    if cat == "MotoGP":
+        o_href = yt_url(off) if off else official_search_url(ev, kind)
+        o_btn = f"<a class='rpb off' href='{esc(o_href)}' target='_blank' rel='noopener'>▶ MotoGP</a>"
+    btns = [c_btn, o_btn] if pays == "FR" or not off else [o_btn, c_btn]
+    return f"<div class='rpbs'>{''.join(btns)}</div>"
 
 
 def grid_of(res):
@@ -1923,12 +1985,14 @@ def mark_seen(ev, sess_lists):
         write_seen(ss.seen)
 
 
-def reveal_toggle(key, ctx):
-    """« Tout dévoiler » : montre d'un coup tous les résultats de la page (rien n'est retenu d'une visite à l'autre)."""
+def reveal_toggle(key, ctx, ev=None, wk=None):
+    """« Tout dévoiler » : montre d'un coup tous les résultats de la page (et note le GP comme vu)."""
     if ctx["show_all"]:
         return " all"
     with st.container(key="tools"):
-        on = st.toggle("👁 Tout dévoiler sur cette page", key=key, help="Montre d'un coup tous les résultats cachés de la page.")
+        on = st.toggle("👁 Tout dévoiler", key=key, help="Montre d'un coup tous les résultats cachés du week-end.")
+    if on and ev and wk:
+        mark_seen(ev, list(wk.values()))
     return " all" if on else ""
 
 
@@ -1971,61 +2035,11 @@ def next_gp_card(nev, ctx):
             f"{esc(fr_range(nev['start'], nev['end']))}</div>{cd}<div class='tms'>{tms}</div>{trk}</a>")
 
 
-def brief_page(ctx):
-    ss = st.session_state
-    evs, zone, fav = ctx["evs"], ctx["zone"], ss.get("fav")
-    ev = pick_event(evs)
-    cat_ids = ctx["cat_ids"]
-    wk = weekend(ev, cat_ids)
-    sess = wk.get("MotoGP") or []
-    res = {s["code"]: classification(s) for s in sess if (session_done(s) or session_live(s))}
-    results, cut = ctx["results"], ctx["cut"]
 
-    st.markdown(gp_hero(ev, sess, zone, total=len(evs)), unsafe_allow_html=True)
-    allcls = reveal_toggle("reveal_brief", ctx)
-    parts = [fav_band(ctx, sess, evs, cut)]
-    rp = replays_html(ev, wk, zone, ss.opts["pays"])
-    if rp:
-        parts.append(sec_title("Les replays", "Résumés CANAL+ Sport en français · version officielle MotoGP") + rp)
-    parts.append(sec_title("Le week-end", f"MotoGP · heures de {ctx['zone_name']}", gp_link(ev, "Moto2, Moto3 et classements complets ›"))
-                 + timeline(ev, sess, res, zone, fav, ss.opts["indice"], stakes_of(ctx["table"])))
-
-    cards = []
-    if any(session_done(s) and s["group"] for s in sess):
-        before = standings([x for x in results if x[0]["id"] != ev["id"]], set())
-        after = standings(results, set())
-        facts = weekend_facts(ev, sess, res, before, after, fav)
-        if facts:
-            cards.append(("📝", "Le week-end en bref", "Pole, sprint, course, abandons : l'essentiel en quelques lignes.",
-                          f"<ul class='facts'>{''.join('<li>' + f + '</li>' for f in facts)}</ul>", ""))
-        mv = moves_html(before, after, fav)
-        if mv:
-            cards.append(("📈", "Le championnat", "Le top 8 après ce week-end, et qui a bougé.", mv, ""))
-        rac = res.get("RAC") or res.get("SPR")
-        if rac and any(r["pos"] == 1 for r in rac):
-            label = "Le podium du Grand Prix" if res.get("RAC") else "Le podium du sprint"
-            cards.append(("🏆", label, "Les trois premiers, sur la marche.", podium_html(rac), "full"))
-        pays = ss.opts["pays"]
-        ours = ours_html(ev, {c: {s["code"]: classification(s) for s in wk.get(c, []) if session_done(s) and s["code"] in ("SPR", "RAC")}
-                              for c in CATS}, pays, fav)
-        if ours:
-            cards.append((flag(pays), f"{COUNTRY_FR[pays][1]} du week-end", "MotoGP, Moto2, Moto3 : comment s'en sont sortis les nôtres ?",
-                          ours, "full"))
-    if cards:
-        html_cards = "".join(f"<div class='card {cls}'><span class='ico'>{ico}</span><h3>{esc(title)}</h3>"
-                             f"<div class='tease'>{esc(tease)}</div>{hidden('Voir', content)}</div>"
-                             for ico, title, tease, content, cls in cards)
-        parts.append(sec_title("Ce qu'il faut savoir", "Caché tant que tu ne cliques pas") + f"<div class='bf-grid'>{html_cards}</div>")
-    items = news(bucket(600))[:4]
-    if items:
-        parts.append(sec_title("Les actus", "", link("vue=actus", "Toutes les actus ›")) + news_html(items, ctx))
-    nev = next((e for e in evs if e["start"] > max(now_utc().date(), ev["end"])), None)
-    if nev:
-        parts.append(sec_title("Et après") + next_gp_card(nev, ctx))
-    st.markdown(f"<div class='bf{allcls}'>{''.join(parts)}</div>", unsafe_allow_html=True)
 
 
 def gp_page(ctx):
+    """Le Grand Prix (page d'accueil : le week-end en cours, sinon le dernier couru ou le prochain)."""
     ss = st.session_state
     evs, zone, fav = ctx["evs"], ctx["zone"], ss.get("fav")
     ev = pick_event(evs, ss.get("gp"))
@@ -2043,42 +2057,61 @@ def gp_page(ctx):
         if c3.button("›", key="gp_next", disabled=i == len(evs) - 1, use_container_width=True):
             ss.gp = evs[i + 1]["code"]
             st.rerun()
-    cat_ids = ctx["cat_ids"]
+    cat_ids, results, cut = ctx["cat_ids"], ctx["results"], ctx["cut"]
     wk = weekend(ev, cat_ids)
-    st.markdown(gp_hero(ev, wk.get("MotoGP") or [], zone, total=len(evs)), unsafe_allow_html=True)
-    if any(session_done(s) for lst in wk.values() for s in lst):
-        mark_seen(ev, list(wk.values()))
-    allcls = reveal_toggle(f"reveal_{ev['code']}", ctx)
-    rp = replays_html(ev, wk, zone, ss.opts["pays"])
-    if rp:
-        st.markdown(f"<div class='bf{allcls}'>{sec_title('Les replays', 'Résumés CANAL+ Sport en français · version officielle MotoGP')}{rp}</div>",
-                    unsafe_allow_html=True)
+    msess = wk.get("MotoGP") or []
+    st.markdown(gp_hero(ev, msess, zone, total=len(evs)), unsafe_allow_html=True)
+    allcls = reveal_toggle(f"reveal_{ev['code']}", ctx, ev, wk)
+    current = ev is pick_event(evs)
+    if current and fav:
+        st.markdown(fav_band(ctx, msess, evs, cut), unsafe_allow_html=True)
+
+    st.markdown(sec_title("Le week-end", f"heures de {ctx['zone_name']} · ▶ = replay"), unsafe_allow_html=True)
     cat = ss.get("cat", "MotoGP")
-    st.markdown(sec_title("Le week-end", f"heures de {ctx['zone_name']}"), unsafe_allow_html=True)
     cat = st.segmented_control("Catégorie", CATS, default=cat, key="cat_pick", label_visibility="collapsed") or cat
     ss.cat = cat
     sess = wk.get(cat) or []
     res = {s["code"]: classification(s) for s in sess if session_done(s) or session_live(s)}
-    grid = grid_of(res)
-    st.markdown(f"<div class='bf{allcls}'>{timeline(ev, sess, res, zone, fav, ss.opts['indice'], stakes_of(ctx['table']))}</div>",
+    st.markdown(f"<div class='bf{allcls}'>{timeline(ev, sess, res, zone, fav, ss.opts['indice'], stakes_of(ctx['table']), cat, ss.opts['pays'])}</div>",
                 unsafe_allow_html=True)
-    done = [s for s in sess if (session_done(s) or session_live(s)) and res.get(s["code"])]
-    if done:
-        st.markdown(sec_title("Les classements complets", f"{cat} · une séance à la fois"), unsafe_allow_html=True)
-        for s in reversed(done):
-            rows = res[s["code"]]
-            race = s["code"] in ("SPR", "RAC")
-            extra = ""
-            if race and ss.opts["indice"]:
-                lvl = watch_level(watch_score(rows, grid, s, stakes_of(ctx["table"])))
-                if lvl is not None:
-                    ic, nm, tip = WATCH_LEVELS[lvl]
-                    extra = f"<p class='note'>{ic} <b>{nm}</b> · {esc(tip)}</p>"
-            content = (podium_html(rows) if race else "") + f"<div class='scroll'>{results_table(rows, s['code'], fav)}</div>"
-            with st.expander(f"{s['label']} · {when_txt(s['utc'], zone)}" + (" · ● en cours" if session_live(s) else ""),
-                             expanded=bool(allcls) and race):
-                st.markdown(f"<div class='bf{allcls}'>{extra}{hidden('Voir le classement', content)}</div>", unsafe_allow_html=True)
-    rec = next((s for s in sess if s["code"] == "RAC"), None)
+
+    parts = []
+    mres = res if cat == "MotoGP" else {s["code"]: classification(s) for s in msess if session_done(s) or session_live(s)}
+    if any(session_done(s) and s["group"] for s in msess):
+        keys = " ".join(sorted({seen_key(ev, s["group"]) for s in msess if s["group"] and session_done(s)}))
+        before = standings([x for x in results if x[0]["start"] < ev["start"]], set())
+        after = standings([x for x in results if x[0]["start"] <= ev["start"]], set())
+        cards = []
+        facts = weekend_facts(ev, msess, mres, before, after, fav)
+        if facts:
+            cards.append(("📝", "Le week-end en bref", "Pole, sprint, course, abandons : l'essentiel.",
+                          f"<ul class='facts'>{''.join('<li>' + f + '</li>' for f in facts)}</ul>", ""))
+        mv = moves_html(before, after, fav)
+        if mv:
+            cards.append(("📈", "Le championnat", "Le top 8 après ce week-end, et qui a bougé.", mv, ""))
+        rac = mres.get("RAC") or mres.get("SPR")
+        if rac and any(r["pos"] == 1 for r in rac):
+            label = "Le podium du Grand Prix" if mres.get("RAC") else "Le podium du sprint"
+            cards.append(("🏆", label, "Les trois premiers, sur la marche.", podium_html(rac), "full"))
+        pays = ss.opts["pays"]
+        ours = ours_html(ev, {c: {s["code"]: classification(s) for s in wk.get(c, []) if session_done(s) and s["code"] in ("SPR", "RAC")}
+                              for c in CATS}, pays, fav)
+        if ours:
+            cards.append((flag(pays), f"{COUNTRY_FR[pays][1]} du week-end", "MotoGP, Moto2, Moto3 : comment s'en sont sortis les nôtres ?",
+                          ours, "full"))
+        if cards:
+            html_cards = "".join(f"<div class='card {cls}'><span class='ico'>{ico}</span><h3>{esc(title)}</h3>"
+                                 f"<div class='tease'>{esc(tease)}</div>{hidden('Voir', content, seen=keys)}</div>"
+                                 for ico, title, tease, content, cls in cards)
+            parts.append(sec_title("Ce qu'il faut savoir", "MotoGP · caché tant que tu ne cliques pas") + f"<div class='bf-grid'>{html_cards}</div>")
+    if current:
+        items = news(bucket(600))[:4]
+        if items:
+            parts.append(sec_title("Les actus", "", link("vue=actus", "Toutes les actus ›")) + news_html(items, ctx))
+    nev = next((e for e in evs if e["start"] > max(now_utc().date(), ev["end"])), None)
+    if nev and current:
+        parts.append(sec_title("Et après") + next_gp_card(nev, ctx))
+    rec = next((s for s in msess if s["code"] == "RAC"), None)
     if rec and session_done(rec):
         lines = []
         for r in records(rec):
@@ -2089,8 +2122,9 @@ def gp_page(ctx):
                 yr = f" ({r['year']})" if r.get("year") else ""
                 lines.append(f"<li>📏 {kind} : <b>{t}</b> · {who}{yr}</li>")
         if lines:
-            st.markdown(sec_title("Records du circuit", cat) + f"<div class='card'><ul class='facts'>{''.join(lines)}</ul></div>",
-                        unsafe_allow_html=True)
+            parts.append(sec_title("Records du circuit", "MotoGP") + f"<div class='card'><ul class='facts'>{''.join(lines)}</ul></div>")
+    if parts:
+        st.markdown(f"<div class='bf{allcls}'>{''.join(parts)}</div>", unsafe_allow_html=True)
 
 
 def calendar_page(ctx):
@@ -2111,7 +2145,7 @@ def calendar_page(ctx):
             cls, stt = "cc", ""
         fl = f"<img src='{esc(m['flag'])}' alt=''>" if m.get("flag") else flag(e["iso"])
         trk = f"<img class='trk' src='{esc(m['track'])}' alt=''>" if m.get("track") else ""
-        img = m.get("top") or m.get("bg") or ""
+        img = m.get("bg") or m.get("top") or ""
         out.append(f"<a class='{cls}' href='#go?vue=gp&gp={e['code']}' style=\"--img:url('{esc(img)}')\"><span class='r'>{e['round']}</span>"
                    f"<span class='stt'>{stt}</span>{trk}<div class='b'><div class='f'>{fl} {esc(fr_range(e['start'], e['end']))}</div>"
                    f"<b>{esc(e['name'])}</b><span class='c'>{esc(e['circuit'])}</span></div></a>")
@@ -2171,14 +2205,14 @@ def standings_page(ctx):
     if kind == "Pilotes":
         table = standings(results, cut)
         top = []
-        for t in table[:3]:
+        for t in table[:5]:
             info = rider_of(t["rid"], t["row"])
-            img = f"<img src='{esc(info['photo'])}' alt=''>" if info.get("photo") else ""
+            img = f"<img src='{esc(info['photo'])}' loading='lazy' alt=''>" if info.get("photo") else ""
             gap = f" <small>· -{t['gap']}</small>" if t["gap"] else ""
-            top.append(f"<div class='t3 r{t['rank']}' data-n='{esc(info.get('num') or '')}' style='--c:{esc(color_of(t['rid'], t['row']))}'>"
-                       f"{img}<div class='b'><div class='p'>{t['rank']}</div><div class='n'>{rider_link(t['rid'], esc(short_name(info, t['row'])))}</div>"
+            top.append(f"<div class='t5 r{t['rank']}' data-n='{esc(info.get('num') or '')}' style='--c:{esc(color_of(t['rid'], t['row']))}'>"
+                       f"<span class='p'>{t['rank']}</span>{img}<div class='b'><div class='n'>{rider_link(t['rid'], esc(short_name(info, t['row'])))}</div>"
                        f"<div class='tm'>{flag(t['iso'])} {esc(t['team'])}</div><div class='pts'>{t['pts']} <small>pts</small>{gap}</div></div></div>")
-        st.markdown(f"<div class='top3'>{''.join(top)}</div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='top5'>{''.join(top)}</div>", unsafe_allow_html=True)
         lead = max(table[0]["pts"], 1) if table else 1
         head_ = ("<tr><th class='rk'>#</th><th class='l'>Pilote</th><th>Pts</th><th>Écart</th><th>Vict.</th><th>Podiums</th>"
                  "<th>Sprints</th><th>Poles</th><th class='l'>3 derniers GP</th></tr>")
@@ -2466,7 +2500,7 @@ def main():
         ss.seen = read_seen(cookies.get("gp_vues", ""))
         ss.hello_done = bool(cookies.get("gp_hello"))
         q = st.query_params
-        ss.view = q.get("vue") if q.get("vue") in VIEWS else "brief"
+        ss.view = q.get("vue") if q.get("vue") in VIEWS and q.get("vue") != "brief" else "gp"
         ss.gp = q.get("gp") or None
         ss.rider = q.get("pilote") or None
         ss.cat = q.get("cat") if q.get("cat") in CATS else "MotoGP"
@@ -2494,15 +2528,14 @@ def main():
 
     hdr = st.container(key="hdr")
     h1, h2 = hdr.columns([10, 1])
-    h1.markdown("<div class='brand'><span class='lg'>Bada Bing <i>MotoGP</i></span><span class='sl'></span>"
-                "<small>sans spoil</small></div>", unsafe_allow_html=True)
+    h1.markdown("<div class='brand'><span class='lg'>Bada Bing <i>MotoGP</i></span></div>", unsafe_allow_html=True)
     with h2.popover("⚙️", use_container_width=True):
         settings_panel(ctx)
 
     if not ss.hello_done:
         st.info("👋 Bienvenue ! Ici, **aucun résultat n'est montré sans ton accord** : chaque classement est caché derrière "
                 "« 👁 Voir », le championnat s'arrête avant le dernier GP tant que tu ne l'as pas ouvert, et les actus récentes "
-                "sont floutées. « 👁 Tout dévoiler » montre tout d'un coup. Choisis ton pilote dans ⚙️.")
+                "sont floutées. « 👁 Tout dévoiler » montre tout d'un coup. ▶ = replay. Choisis ton pilote dans ⚙️.")
         set_cookie("gp_hello", "1")
         ss.hello_done = True
 
@@ -2514,20 +2547,20 @@ def main():
                 ss.view = key
                 if key == "pilotes":
                     ss.rider = None
-                if key == "gp":
+                if key == "gp":  # re-cliquer « Grand Prix » = le week-end en cours
                     ss.gp = None
                 st.rerun()
 
     view = ss.view
     st.query_params.clear()
-    if view != "brief":
+    if view != "gp":
         st.query_params["vue"] = view
     if view == "gp" and ss.get("gp"):
         st.query_params["gp"] = ss.gp
     if view == "pilotes" and ss.get("rider"):
         st.query_params["pilote"] = ss.rider
 
-    {"brief": brief_page, "gp": gp_page, "calendrier": calendar_page, "classement": standings_page,
+    {"gp": gp_page, "calendrier": calendar_page, "classement": standings_page,
      "pilotes": riders_page, "actus": news_page}[view](ctx)
 
     page_footer()

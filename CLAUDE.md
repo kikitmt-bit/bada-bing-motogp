@@ -22,7 +22,9 @@ Réponses à l'utilisateur en français. Incrémenter `APP_VERSION` à chaque ch
 
 ## Pas de spoil
 - Groupes qui spoilent par GP : `q` (qualifs), `s` (sprint), `r` (course) ; clé « 26QATr », cookie `gp_vues` (+ localStorage).
-- Ouvrir la page d'un GP le marque vu. `spoil_cut` : classements, fiches et brief s'arrêtent avant les groupes non vus du
+- Plus d'onglet « Le brief » (v-m004) : « Grand Prix » est la page d'accueil (week-end en cours), avec mon pilote, la frise,
+  « Ce qu'il faut savoir », les actus et le prochain GP. Un GP est noté VU quand on dévoile un de ses résultats (le navigateur
+  écrit la clé `data-k` dans `gp_vues`, pris en compte au chargement suivant) ou avec « Tout dévoiler » (tout de suite). `spoil_cut` : classements, fiches et brief s'arrêtent avant les groupes non vus du
   DERNIER GP couru ; interrupteur « Inclure le dernier GP » ; ⚙️ « Toujours montrer les résultats » (classe `.all`).
 - Résultats derrière des cases à cocher CSS (`hidden`). Ne jamais écrire `checked` dans le HTML.
 - « 👁 Tout dévoiler sur cette page » (`reveal_toggle`, brief et page GP) : ajoute la classe `.all` aux blocs de la page.
@@ -31,7 +33,7 @@ Réponses à l'utilisateur en français. Incrémenter `APP_VERSION` à chaque ch
 - `python tests/test_sans_spoil.py` avant chaque envoi.
 
 ## Navigation
-Onglets `TABS` (`?vue=brief|gp|calendrier|classement|pilotes|actus`, `&gp=QAT`, `&pilote=<id>`). Liens internes `#go?…`
+Onglets `TABS` (`?vue=gp|calendrier|classement|pilotes|actus`, `&gp=QAT`, `&pilote=<id>`). Liens internes `#go?…`
 interceptés par `page_script` → champ caché `go_to` → `apply_go` (comme le site NBA). Réglages : `gp_fav`, `gp_opt`, relus
 dans le navigateur et renvoyés (`restore=1`) car Streamlit Cloud ne transmet pas les cookies écrits par la page.
 
@@ -42,3 +44,11 @@ compte à rebours, bande de chiffres du circuit. Week-end en frise vendredi/same
 photo du GP. Calendrier en cartes photo + tracé. Classement : top 3 en cartes avec photo détourée + barres de points.
 Pilotes : cartes photo détourée aux couleurs de l'équipe, numéro géant. Noms « M. Marquez » (`short_name` : Marc et Alex).
 Mêmes règles d'affichage que la NBA : infos courtes sur une ligne (`nowrap` + `ellipsis`), `min-width:0` dans les grilles.
+
+## v-m004 (retours de Kiki)
+- Tuiles de séance : classement COMPLET dans la tuile (3 visibles, le reste en faisant défiler `.mini .ml`), plus de
+  « classements complets » en bas. Replays dans les tuiles de course (`replay_buttons` : ▶ Résumé CANAL+ / ▶ MotoGP).
+- Grand tracé dans l'en-tête et le calendrier ; photos du calendrier = photo `bg` du GP, peu assombrie.
+- Classement : top 5 en cartes verticales (photo au centre, numéro derrière). Têtes rondes cadrées visage + torse (`.hd img`).
+- Actus : une image par article (RSS, sinon `content:encoded`, sinon og:image de la page : `og_image`, `.cache/og.json`).
+- Marque sans les barres ni « sans spoil » ; barre d'outils Streamlit (Share, étoile, crayon, GitHub) cachée en CSS.
