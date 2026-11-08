@@ -27,7 +27,7 @@ try:
 except Exception:  # pragma: no cover
     components = None
 
-APP_VERSION = "2026-11-m024"
+APP_VERSION = "2026-11-m025"
 HERE = os.path.dirname(os.path.abspath(__file__))
 CACHE_DIR = os.path.join(HERE, ".cache")
 log = logging.getLogger("motogp")
@@ -2129,6 +2129,8 @@ a.nw:hover {transform:translateY(-3px);}
 /* ---------- PC (retours de l'audit) ---------- */
 .ses .t .dd {display:block; font:700 10px/1.2 var(--B); font-style:normal; color:var(--mu); letter-spacing:1px; text-transform:uppercase;}
 .z {color:rgba(255,255,255,.16);}
+table.std.tt {table-layout:fixed;}
+table.std.tt th.rk {width:50px;} table.std.tt th.pc {width:26%;} table.std.tt th.ec {width:110px;}
 .cutpill {display:inline-block; margin:2px 0 12px; padding:5px 12px; border-radius:20px; font-size:12px; color:#c9ced8;
   background:rgba(225,6,0,.1); border:1px solid rgba(225,6,0,.3);}
 .card.tms {max-width:760px;}
@@ -2139,14 +2141,19 @@ a.nw:hover {transform:translateY(-3px);}
 .st-key-gptop [data-testid="stColumn"]:last-child {display:flex; justify-content:flex-end;}
 .st-key-gptop .st-key-tools {width:auto !important;}
 @media (min-width: 701px) {
-  .tl {grid-template-columns:repeat(4, minmax(0, 1fr)) !important; gap:12px !important; align-items:start;}
-  .tl .day {display:contents;}
-  .tl .dh {display:none;}
+  /* une ligne par jour : le jour à gauche, ses séances à droite, dans l'ordre */
+  .tl {grid-template-columns:1fr !important; gap:14px !important;}
+  .tl .day {display:grid; grid-template-columns:120px repeat(4, minmax(0, 1fr)); gap:12px; align-items:start;}
+  .tl .dh {flex-direction:column; align-items:flex-start; gap:2px; border-bottom:none; border-right:3px solid var(--line);
+    align-self:stretch; padding:10px 0 0; font-size:24px;}
+  .tl .dh.today {border-right-color:var(--red);}
+  .tl .dh span {font-size:13px;}
+  .ses .t .dd {display:none !important;}
   .know {grid-template-columns:1fr 1fr;}
   .know .card.full {grid-column:auto;}
 }
 @media (min-width: 701px) and (max-width: 1000px) {
-  .tl {grid-template-columns:repeat(2, minmax(0, 1fr)) !important;}
+  .tl .day {grid-template-columns:100px repeat(2, minmax(0, 1fr));} .tl .dh {grid-row:span 2;}
 }
 @media (max-width: 700px) {
   .ses .t .dd {display:none;}
@@ -2767,8 +2774,8 @@ def standings_page(ctx):
                        f"<td class='pts' style='--c:{MAKER_COLOR.get(t['maker'], '#e10600')}'>{t['pts']}"
                        f"<span class='bar' style='width:{max(4, round(100 * t['pts'] / lead))}%'></span></td>"
                        f"<td>{'–' if not t['gap'] else '-' + str(t['gap'])}</td></tr>" for t in table)
-        st.markdown(f"<div class='card'><table class='std'><tr><th class='rk'>#</th><th class='l'>{kind[:-1]}</th><th>Pts</th>"
-                    f"<th>Écart</th></tr>{rows}</table></div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='card'><table class='std tt'><tr><th class='rk'>#</th><th class='l'>{kind[:-1]}</th><th class='pc'>Pts</th>"
+                    f"<th class='ec'>Écart</th></tr>{rows}</table></div>", unsafe_allow_html=True)
         if kind == "Constructeurs":
             st.caption("Constructeurs : seul le meilleur pilote de chaque marque marque des points à chaque sprint et course.")
 
