@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-24.04   # version figée : « ubuntu-latest » passe à Ubuntu 26 (le navigateur pourrait ne plus s'y installer)
     timeout-minutes: 10
     env:
-      SITE_URL: "https://badabingmotogp.streamlit.app/?robot=1"
+      SITE_URL: "https://bada-bing-motogp.streamlit.app/?robot=1"
     steps:
       - uses: actions/setup-python@v5
         with:

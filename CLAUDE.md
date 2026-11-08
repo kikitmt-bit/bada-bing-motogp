@@ -72,7 +72,7 @@ Mêmes règles d'affichage que la NBA : infos courtes sur une ligne (`nowrap` + 
 
 ## Réveil du site
 Robot GitHub `.github/workflows/reveil-site.yml` (copie de celui du site NBA) : toutes les heures, Playwright ouvre
-`https://badabingmotogp.streamlit.app/?robot=1` et clique « Yes, get this app back up » si le site dort. Échoue (rouge) si la page
+`https://bada-bing-motogp.streamlit.app/?robot=1` et clique « Yes, get this app back up » si le site dort. Échoue (rouge) si la page
 ouverte n'est pas le site (adresse à corriger dans `SITE_URL`). Lancement à la main : onglet Actions → « Réveil du site » → Run workflow.
 
 ## v-m007 : bannière du GP refaite (carte blanche de Kiki)
