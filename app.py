@@ -27,7 +27,7 @@ try:
 except Exception:  # pragma: no cover
     components = None
 
-APP_VERSION = "2026-11-m016"
+APP_VERSION = "2026-11-m017"
 HERE = os.path.dirname(os.path.abspath(__file__))
 CACHE_DIR = os.path.join(HERE, ".cache")
 log = logging.getLogger("motogp")
@@ -1988,10 +1988,10 @@ a.nw:hover {transform:translateY(-3px);}
 }
 @media (max-width: 700px) {
   /* --- barre d'onglets fixée en bas, comme une application --- */
-  .block-container {padding-bottom:96px !important; padding-top:.6rem !important;}
-  .st-key-tabs {position:fixed !important; top:auto !important; bottom:0; left:0; right:0; z-index:999; margin:0 !important;
-    padding:6px 4px calc(6px + env(safe-area-inset-bottom)) !important; backdrop-filter:none !important;
-    background:rgba(6,7,10,.97) !important; border-top:1px solid var(--line); border-bottom:none !important;}
+  .block-container {padding-bottom:70px !important; padding-top:74px !important;}
+  .st-key-tabs {position:fixed !important; top:0 !important; bottom:auto !important; left:0 !important; right:0 !important; z-index:999;
+    margin:0 !important; padding:calc(4px + env(safe-area-inset-top)) 4px 4px !important; backdrop-filter:none !important;
+    background:rgba(6,7,10,.97) !important; border-bottom:1px solid var(--line) !important;}
   .st-key-tabs [data-testid="stHorizontalBlock"] {flex-wrap:nowrap !important; gap:2px !important; overflow:visible;}
   .st-key-tabs [data-testid="stColumn"] {flex:1 1 0 !important; min-width:0 !important; width:auto !important;}
   .st-key-tabs [data-testid="stColumn"]:last-child {flex:0 0 30px !important;}
@@ -2028,7 +2028,7 @@ a.nw:hover {transform:translateY(-3px);}
   .bp-s.tr b small, .bp-s.br b small {display:none;}
   .bp-f {bottom:5px; font-size:10px;}
   /* --- « Tout dévoiler » flottant --- */
-  .st-key-tools {position:fixed !important; right:12px; bottom:84px; z-index:998; width:auto !important;
+  .st-key-tools {position:fixed !important; left:12px; bottom:16px; z-index:998; width:auto !important;
     background:rgba(20,22,28,.96); border:1px solid rgba(225,6,0,.6); border-radius:24px; padding:6px 14px 6px 10px !important;
     box-shadow:0 8px 24px rgba(0,0,0,.6);}
   .st-key-tools label p {font-size:13px !important;}

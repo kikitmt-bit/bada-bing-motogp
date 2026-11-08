@@ -114,9 +114,10 @@ Lieux acceptés dans les titres : `GP_FR_ALIAS` (« Amériques », « Catalogne 
 
 ## v-m016 : refonte téléphone (audit, étapes 1 à 4)
 Tout dans le bloc `@media (max-width: 700px)` de fin de CSS ; le PC ne change presque pas.
-- Onglets = barre FIXE EN BAS (icône au-dessus du mot, onglet actif en rouge), roue des réglages en petite icône grise au bout.
+- Onglets = barre FIXÉE EN HAUT (position fixed, le sticky ne marche pas dans les blocs Streamlit ; v-m017 : pas en bas, le bouton « Manage app » de Streamlit Cloud couvre le coin bas droit),
+  icône au-dessus du mot, onglet actif en rouge, roue des réglages en petite icône grise au bout.
 - Bannière compacte : photo moins haute, fiche circuit avec les 4 chiffres sur une ligne sous le tracé.
-- « Tout dévoiler » (`.st-key-tools`) = pastille flottante en bas à droite.
+- « Tout dévoiler » (`.st-key-tools`) = pastille flottante en bas à GAUCHE (le coin bas droit est pris par « Manage app »).
 - Bloc « Les replays » sous la bannière (`replays_block`, `.rpk` : Sprint, Grand Prix, Moto2, Moto3), plus de boutons dans les tuiles.
 - Séances en lignes compactes : bouton « Voir » à droite de la ligne (`.ses .hbl` en absolu), météo une fois par jour (`.dwx`).
 - « Ce qu'il faut savoir » (`.know`) en lignes avec « Voir ». Libellé des blocs cachés dans `<em class='lt'>`.
