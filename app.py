@@ -27,7 +27,7 @@ try:
 except Exception:  # pragma: no cover
     components = None
 
-APP_VERSION = "2026-11-m005"
+APP_VERSION = "2026-11-m006"
 HERE = os.path.dirname(os.path.abspath(__file__))
 CACHE_DIR = os.path.join(HERE, ".cache")
 log = logging.getLogger("motogp")
@@ -462,10 +462,40 @@ def fix_photos(out, year):
             out[rid]["photo"] = u
 
 
+@st.cache_data(ttl=86400, show_spinner=False, max_entries=200)
+def rider_extra(rid, year):
+    """Pilote absent de la liste des équipes (remplaçant, wild-card, pilote d'essai) : sa fiche (photo, numéro, couleurs)."""
+    d = get_json(f"{API}/riders/{rid}") or {}
+    if not d:
+        return {}
+    car = sorted(d.get("career") or [], key=lambda c: (c.get("season") == year, c.get("season") or 0), reverse=True)
+    photo, step = "", (car[0] if car else {})
+    for c in car:
+        u = (((c.get("pictures") or {}).get("profile") or {}).get("main") or "").replace("motogp.com//", "motogp.com/")
+        if u and _url_ok(u):
+            photo = u
+            break
+    tm = step.get("team") or {}
+    return {"id": rid, "name": f"{d.get('name', '')} {d.get('surname', '')}".strip(), "first": d.get("name", ""),
+            "last": d.get("surname", ""), "iso": (d.get("country") or {}).get("iso", ""), "country": (d.get("country") or {}).get("name", ""),
+            "birth": d.get("birth_date", ""), "city": d.get("birth_city", ""), "age": d.get("years_old"), "num": step.get("number"),
+            "team": step.get("sponsored_team") or tm.get("name", ""), "color": tm.get("color") or "#555", "text": tm.get("text_color") or "#fff",
+            "maker": (tm.get("constructor") or {}).get("name", ""), "photo": photo,
+            "cat": re.sub(r"[^A-Za-z0-9]", "", (step.get("category") or {}).get("name", "")), "start": d.get("start_year"),
+            "in_grid": False}
+
+
 def rider_of(rid, row=None):
     info = (st.session_state.get("riders_map") or {}).get(rid)
     if info:
         return info
+    if rid:
+        try:
+            info = rider_extra(rid, now_utc().year)
+        except Exception:
+            info = {}
+        if info:
+            return info
     row = row or {}
     return {"id": rid, "name": row.get("name", "?"), "last": (row.get("name") or "?").split(" ")[-1], "first": "",
             "iso": row.get("iso", ""), "num": row.get("num"), "team": row.get("team", ""), "color": "#555", "text": "#fff",
@@ -1154,7 +1184,7 @@ def hidden(label, content, cls="tg", seen=""):
     i = uid("h")
     k = f" data-k='{esc(seen)}'" if seen else ""
     return (f"<div class='hb'{k}><input type='checkbox' id='{i}' class='{cls}'>"
-            f"<label for='{i}' class='hbl'><span>👁</span>{label}</label><label for='{i}' class='hbc'>🙈 Cacher</label>"
+            f"<label for='{i}' class='hbl'><span>👁</span>{label}</label>"
             f"<div class='hbx'>{content}</div></div>")
 
 
@@ -1385,6 +1415,11 @@ div[data-testid="stElementContainer"]:has(> iframe[data-testid="stIFrame"]), div
 .st-key-tabs button {white-space:nowrap; font-family:var(--D) !important; letter-spacing:.5px; border-radius:6px !important;
   transform:skewX(-10deg);}
 .st-key-tabs button p {font:700 16px var(--D) !important; text-transform:uppercase; letter-spacing:.8px;}
+.st-key-tabs [data-testid="stPopover"] button {background:transparent !important; border:none !important; box-shadow:none !important;
+  color:var(--mu) !important; transform:none;}
+.st-key-tabs [data-testid="stPopover"] button:hover {color:#fff !important;}
+.st-key-tabs [data-testid="stPopover"] button [data-testid="stIconMaterial"] {font-size:22px;}
+.st-key-tabs [data-testid="stPopover"] button div[aria-hidden="true"] {display:none !important;}
 .st-key-tabs button[kind="primary"], .st-key-tabs button[data-testid="stBaseButton-primary"] {background:var(--red) !important;
   border-color:var(--red) !important; box-shadow:0 6px 24px rgba(225,6,0,.35);}
 /* ---------- titres de section ---------- */
@@ -1505,7 +1540,11 @@ div[data-testid="stElementContainer"]:has(> iframe[data-testid="stIFrame"]), div
 .rpb {display:inline-flex; align-items:center; gap:5px; padding:7px 12px; border-radius:6px; font:700 13px var(--B); white-space:nowrap;
   color:#fff !important; transition:transform .12s, box-shadow .12s;}
 .rpb:hover {transform:translateY(-1px);}
-.rpb.canal {background:#000; border:1px solid rgba(255,255,255,.55); box-shadow:0 4px 16px rgba(0,0,0,.4);}
+.rpb.canal {background:#000; border:1px solid rgba(255,255,255,.55); box-shadow:0 4px 16px rgba(0,0,0,.4); padding:8px 14px 8px 10px;}
+.rpb.canal:hover {border-color:#fff; box-shadow:0 6px 22px rgba(225,6,0,.35);}
+.rpb .pl {width:22px; height:22px; border-radius:50%; background:var(--red); display:inline-flex; flex:none; position:relative;}
+.rpb .pl:after {content:''; position:absolute; left:8px; top:6px; border-left:8px solid #fff; border-top:5px solid transparent;
+  border-bottom:5px solid transparent;}
 .rpb.canal b {font-weight:900; letter-spacing:.5px;}
 .rpb.off {background:var(--red); box-shadow:0 4px 16px rgba(225,6,0,.35);}
 .rpb small {opacity:.75; font-weight:500;}
@@ -1778,7 +1817,7 @@ a.nw:hover {transform:translateY(-3px);}
 
 def page_footer():
     st.markdown("<div class='foot'><div class='kerb'></div>Bada Bing MotoGP · site de fans, non affilié à MotoGP™ / Dorna · "
-                "données et photos : motogp.com · vidéos : CANAL+ Sport, MotoGP · actus : Motorsport.com, Paddock GP · "
+                "données et photos : motogp.com · vidéos : CANAL+ Sport · actus : Motorsport.com, Paddock GP · "
                 f"v{APP_VERSION[-3:]}</div>", unsafe_allow_html=True)
 
 
@@ -1904,22 +1943,16 @@ def gp_hero(ev, sess, zone, nev=None, total=22):
 
 
 def replay_buttons(ev, s, cat, pays):
-    """Boutons replay d'une course finie : résumé CANAL+ Sport (en français) et version officielle MotoGP. Sans titre (spoil)."""
+    """Bouton replay d'une course finie : le résumé CANAL+ Sport (en français). Sans titre (spoil)."""
     if s["code"] not in ("SPR", "RAC") or not session_done(s) or (cat != "MotoGP" and s["code"] != "RAC"):
         return ""
     kind = "sprint" if s["code"] == "SPR" else "race"
     canal = find_video(ev, "canal", kind, cat)
-    off = find_video(ev, "motogp", kind) if cat == "MotoGP" else None
-    btns = []
-    c_href = yt_url(canal) if canal else canal_search_url(ev, kind, cat)
-    c_mins = f" <small>{canal['mins']} min</small>" if canal and canal.get("mins") else ""
-    c_btn = (f"<a class='rpb canal' href='{esc(c_href)}' target='_blank' rel='noopener'>▶ Résumé <b>CANAL+</b>{c_mins}</a>")
-    o_btn = ""
-    if cat == "MotoGP":
-        o_href = yt_url(off) if off else official_search_url(ev, kind)
-        o_btn = f"<a class='rpb off' href='{esc(o_href)}' target='_blank' rel='noopener'>▶ MotoGP</a>"
-    btns = [c_btn, o_btn] if pays == "FR" or not off else [o_btn, c_btn]
-    return f"<div class='rpbs'>{''.join(btns)}</div>"
+    href = yt_url(canal) if canal else canal_search_url(ev, kind, cat)
+    mins = f" <small>{canal['mins']} min</small>" if canal and canal.get("mins") else ""
+    what = "du sprint" if kind == "sprint" else "de la course"
+    return (f"<div class='rpbs'><a class='rpb canal' href='{esc(href)}' target='_blank' rel='noopener'>"
+            f"<span class='pl'></span>Résumé {what} <b>CANAL+</b>{mins}</a></div>")
 
 
 def grid_of(res):
@@ -2584,11 +2617,7 @@ def main():
            "riders": riders, "results": results, "cut": cut, "show_all": show_all, "table": standings(results, cut),
            "spoil_from": spoil_since(results, ss.seen, show_all)}
 
-    hdr = st.container(key="hdr")
-    h1, h2 = hdr.columns([10, 1])
-    h1.markdown("<div class='brand'><span class='lg'>Bada Bing <i>MotoGP</i></span></div>", unsafe_allow_html=True)
-    with h2.popover("⚙️", use_container_width=True):
-        settings_panel(ctx)
+    st.markdown("<div class='brand'><span class='lg'>Bada Bing <i>MotoGP</i></span></div>", unsafe_allow_html=True)
 
     if not ss.hello_done:
         st.info("👋 Bienvenue ! Ici, **aucun résultat n'est montré sans ton accord** : chaque classement est caché derrière "
@@ -2598,7 +2627,9 @@ def main():
         ss.hello_done = True
 
     with st.container(key="tabs"):
-        cols = st.columns(len(TABS))
+        cols = st.columns([1] * len(TABS) + [0.32])
+        with cols[-1].popover("", icon=":material/settings:", use_container_width=True, help="Réglages"):
+            settings_panel(ctx)
         for (key, label, icon), col in zip(TABS, cols):
             if col.button(label, icon=icon, key=f"tab_{key}", use_container_width=True,
                           type="primary" if ss.view == key else "tertiary"):

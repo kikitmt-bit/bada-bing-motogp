@@ -63,3 +63,9 @@ Mêmes règles d'affichage que la NBA : infos courtes sur une ligne (`nowrap` + 
   absente ou cassée (Chantra : « motogp.com//riders » en 404 ; Nakagami : absente).
 - Images des actus : Paddock GP refuse ses images affichées depuis un autre site (403 avec un référent) et refuse les relais
   (wsrv.nl) : `<img referrerpolicy='no-referrer'>` en direct ; pour Paddock GP, l'og:image de l'article. Visuel de secours.
+
+## v-m006 (retours de Kiki)
+- Replays : SEULEMENT les résumés CANAL+ Sport (sprint et Grand Prix, + courses Moto2/Moto3), plus de bouton MotoGP officiel.
+- Roue des réglages : icône discrète au bout des onglets (`st.popover` dans `tabs`), plus en haut à droite.
+- Un résultat dévoilé RESTE dévoilé (plus de « 🙈 Cacher ») ; seul « Tout dévoiler » se désactive.
+- Pilotes hors de la liste des équipes (remplaçants, wild-cards : Aleix Espargaró) : `rider_extra` lit leur fiche (photo, couleurs).
