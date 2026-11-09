@@ -27,7 +27,7 @@ try:
 except Exception:  # pragma: no cover
     components = None
 
-APP_VERSION = "2026-11-m028"
+APP_VERSION = "2026-11-m029"
 HERE = os.path.dirname(os.path.abspath(__file__))
 CACHE_DIR = os.path.join(HERE, ".cache")
 log = logging.getLogger("motogp")
@@ -2393,7 +2393,7 @@ def gp_hero(ev, sess, zone, nev=None, total=22):
 
 def replay_buttons(ev, s, cat, pays):
     """Bouton replay d'une course finie : le résumé CANAL+ Sport (en français). Sans titre (spoil)."""
-    if s["code"] not in ("SPR", "RAC") or not session_done(s) or (cat != "MotoGP" and s["code"] != "RAC"):
+    if s["code"] not in ("SPR", "RAC") or not session_done(s) or cat != "MotoGP":
         return ""
     kind = "sprint" if s["code"] == "SPR" else "race"
     canal = find_video(ev, "canal", kind, cat)
@@ -2409,7 +2409,7 @@ def replay_buttons(ev, s, cat, pays):
 def replays_block(ev, wk, pays):
     """Les replays du GP, bien en vue sous la bannière dès qu'une course est finie."""
     btns = []
-    for cat, code in (("MotoGP", "SPR"), ("MotoGP", "RAC"), ("Moto2", "RAC"), ("Moto3", "RAC")):
+    for cat, code in (("MotoGP", "SPR"), ("MotoGP", "RAC")):  # Moto2 / Moto3 retirés (demande de Kiki : quota YouTube)
         x = next((y for y in wk.get(cat) or [] if y["code"] == code), None)
         if x:
             btns.append(replay_buttons(ev, x, cat, pays))
@@ -3057,7 +3057,7 @@ def diag_page(code, evs):
     st.write(f"**{ev['name']}** · clé YouTube : {'présente' if _secret('youtube', 'api_key', '') else '**absente**'}")
     _API_CACHE.clear()
     store = found_videos()
-    for cat, kind in (("MotoGP", "sprint"), ("MotoGP", "race"), ("Moto2", "race"), ("Moto3", "race")):
+    for cat, kind in (("MotoGP", "sprint"), ("MotoGP", "race")):
         k = f"{ev['start'].year}{ev['code']}_canal_{kind}_{cat}"
         store.pop(k, None)
         API_LOG.clear()

@@ -148,3 +148,6 @@ toutes les vidéos Canal+ qui parlent du GP (pour repérer un titre non reconnu)
 Cause probable du résumé du Qatar manqué : quota épuisé + recherche vide gardée 6 h. Désormais : GP récent = dernières mises en
 ligne (1 unité) puis recherches sans clé ; recherche API (100 unités) UNE par GP (« résumé Grand Prix du Qatar », partagée par
 les 4 vidéos) ; cache maison `_API_CACHE` : 6 h si trouvé, 40 min si vide. `?diag=` montre l'erreur de quota (HTTP 403).
+
+## v-m029
+- Replays : SEULEMENT MotoGP (résumé du sprint + du Grand Prix). Moto2 / Moto3 retirés (Kiki ne les regarde pas ; quota YouTube).
