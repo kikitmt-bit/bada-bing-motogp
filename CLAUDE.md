@@ -143,3 +143,8 @@ Tout dans le bloc `@media (max-width: 700px)` de fin de CSS ; le PC ne change pr
 `_canal_match` assoupli : l'année peut manquer si la vidéo est publiée pendant le GP (`_in_window`), « résumé » / « temps forts »,
 autre saison et qualifs/essais/pole exclus ; 3e recherche de secours (`api_search` « <GP> <catégorie> »). `?diag=QAT` liste aussi
 toutes les vidéos Canal+ qui parlent du GP (pour repérer un titre non reconnu).
+
+## v-m028 : quota YouTube (clé partagée avec la NBA, 10 000 unités / jour)
+Cause probable du résumé du Qatar manqué : quota épuisé + recherche vide gardée 6 h. Désormais : GP récent = dernières mises en
+ligne (1 unité) puis recherches sans clé ; recherche API (100 unités) UNE par GP (« résumé Grand Prix du Qatar », partagée par
+les 4 vidéos) ; cache maison `_API_CACHE` : 6 h si trouvé, 40 min si vide. `?diag=` montre l'erreur de quota (HTTP 403).

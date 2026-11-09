@@ -27,7 +27,7 @@ try:
 except Exception:  # pragma: no cover
     components = None
 
-APP_VERSION = "2026-11-m027"
+APP_VERSION = "2026-11-m028"
 HERE = os.path.dirname(os.path.abspath(__file__))
 CACHE_DIR = os.path.join(HERE, ".cache")
 log = logging.getLogger("motogp")
@@ -958,8 +958,21 @@ def channel_uploads(channel, since_iso, _bucket=None):
 API_LOG = []
 
 
-@st.cache_data(ttl=6 * 3600, show_spinner=False, max_entries=300)
+_API_CACHE = {}
+
+
 def api_search(channel, query, after_iso, before_iso):
+    """Recherche API mémorisée : 6 h si elle a trouvé quelque chose, 40 min si elle est revenue vide."""
+    k = (channel, query, after_iso, before_iso)
+    hit = _API_CACHE.get(k)
+    if hit and time.time() - hit[0] < (6 * 3600 if hit[1] else 2400):
+        return hit[1]
+    res = _api_search(channel, query, after_iso, before_iso)
+    _API_CACHE[k] = (time.time(), res)
+    return res
+
+
+def _api_search(channel, query, after_iso, before_iso):
     """Recherche dans une chaîne par l'API YouTube (clé [youtube] api_key), limitée aux dates du GP : trouve les vidéos
     anciennes que la liste des dernières mises en ligne n'atteint plus (Canal+ publie des dizaines de vidéos par jour).
     100 unités de quota par recherche : appelée seulement pour un GP affiché dont la vidéo n'est pas encore connue."""
@@ -1107,17 +1120,20 @@ def find_video(ev, source, kind, cat="MotoGP"):
     end = datetime.combine(ev["end"], datetime.min.time()).replace(tzinfo=timezone.utc) + timedelta(days=12)
     iso = lambda d: d.strftime("%Y-%m-%dT%H:%M:%SZ")
     pools = []
-    if recent:  # GP récent : les dernières mises en ligne suffisent (1 unité de quota par page)
+    if recent:  # GP récent : dernières mises en ligne (1 unité de quota par page) et recherches sans clé (0 unité)
         pools.append(lambda: channel_uploads(channel, iso(start), bucket(1800)))
-    if source == "canal":  # sinon (et en secours) : recherche par l'API dans la chaîne, aux dates du GP
-        pools.append(lambda: api_search(channel, canal_query(ev, kind, cat), iso(start), iso(end)))
-        pools.append(lambda: api_search(channel, f"résumé {gp_full(ev)} {cat}", iso(start), iso(end)))
-        pools.append(lambda: api_search(channel, f"{gp_short(ev)} {cat}", iso(start), iso(end)))  # secours, large
-    pools.append(lambda: channel_feed(channel, bucket(900)))
-    if recent:
         if source == "canal":
             pools.append(lambda: channel_search(CANAL_CHANNEL, canal_query(ev, kind, cat)))
             pools.append(lambda: [v for v in yt_search("CANAL+ Sport " + canal_query(ev, kind, cat), "fr") if v["channel"] == CANAL_CHANNEL])
+    if source == "canal":
+        # recherche API (100 unités) : UNE requête par GP, partagée par le sprint, la course, Moto2 et Moto3
+        pools.append(lambda: api_search(channel, f"résumé {gp_full(ev)}", iso(start), iso(end)))
+        if not recent:
+            pools.append(lambda: api_search(channel, f"{gp_short(ev)} {cat}", iso(start), iso(end)))
+    pools.append(lambda: channel_feed(channel, bucket(900)))
+    if recent:
+        if source == "canal":
+            pass
         else:
             q = ("Tissot Sprint" if kind == "sprint" else "MotoGP HIGHLIGHTS") + f" {ev['start'].year} {_gp_words(ev)[0].title()} GP"
             pools.append(lambda: yt_search(q))
@@ -3039,7 +3055,7 @@ def diag_page(code, evs):
         st.write("GP inconnu. Codes : " + ", ".join(e["code"] for e in evs))
         return
     st.write(f"**{ev['name']}** · clé YouTube : {'présente' if _secret('youtube', 'api_key', '') else '**absente**'}")
-    api_search.clear()
+    _API_CACHE.clear()
     store = found_videos()
     for cat, kind in (("MotoGP", "sprint"), ("MotoGP", "race"), ("Moto2", "race"), ("Moto3", "race")):
         k = f"{ev['start'].year}{ev['code']}_canal_{kind}_{cat}"
