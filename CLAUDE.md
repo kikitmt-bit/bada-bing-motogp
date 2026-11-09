@@ -138,3 +138,8 @@ Tout dans le bloc `@media (max-width: 700px)` de fin de CSS ; le PC ne change pr
 - « Ce qu'il faut savoir » : grille 2 × 2 régulière sur PC. Classement : zéros en gris pâle (`zp`), barre de points plus épaisse.
 - Calendrier : horaires en carte compacte (`.card.tms`), bouton agenda au style du site. Fiche pilote : photo tête + buste agrandie,
   note sans spoil en étiquette (`.cutpill`). Page élargie à 1440 px, pied de page plus lisible.
+
+## v-m027 : résumé du GP du Qatar non trouvé
+`_canal_match` assoupli : l'année peut manquer si la vidéo est publiée pendant le GP (`_in_window`), « résumé » / « temps forts »,
+autre saison et qualifs/essais/pole exclus ; 3e recherche de secours (`api_search` « <GP> <catégorie> »). `?diag=QAT` liste aussi
+toutes les vidéos Canal+ qui parlent du GP (pour repérer un titre non reconnu).

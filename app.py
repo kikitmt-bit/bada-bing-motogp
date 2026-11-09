@@ -27,7 +27,7 @@ try:
 except Exception:  # pragma: no cover
     components = None
 
-APP_VERSION = "2026-11-m025"
+APP_VERSION = "2026-11-m027"
 HERE = os.path.dirname(os.path.abspath(__file__))
 CACHE_DIR = os.path.join(HERE, ".cache")
 log = logging.getLogger("motogp")
@@ -1033,9 +1033,26 @@ GP_FR_ALIAS = {"USA": ("ameriques", "etats-unis", "austin"), "CAT": ("catalogne"
                "FRA": ("france", "le mans"), "QAT": ("qatar", "lusail")}
 
 
+def _in_window(v, ev):
+    """Vidéo publiée pendant le GP ou dans les 12 jours qui suivent (quand la date est connue)."""
+    pub = parse_dt(v.get("published"))
+    if not pub:
+        return False
+    start = datetime.combine(ev["start"], datetime.min.time()).replace(tzinfo=timezone.utc) - timedelta(days=1)
+    return start <= pub <= start + timedelta(days=16)
+
+
 def _canal_match(v, ev, kind, cat):
+    """Titre d'un résumé Canal+ du GP. Souple : l'année peut manquer (alors la date de mise en ligne doit tomber pendant
+    le GP), « résumé » ou « temps forts », nom du GP en français ou en anglais."""
     t = norm(v["title"])
-    if "resume" not in t or str(ev["start"].year) not in t:
+    if not any(w in t for w in ("resume", "temps forts", "highlights")):
+        return False
+    if str(ev["start"].year) not in t and not _in_window(v, ev):
+        return False
+    if re.search(r"\b20\d\d\b", t) and str(ev["start"].year) not in t:
+        return False  # résumé d'une autre saison
+    if any(w in t for w in ("qualif", "essais", "warm", "practice", "fp1", "fp2", "pole")):
         return False
     places = {fr_place(ev)} | set(_gp_words(ev)) | set(GP_FR_ALIAS.get(ev["code"], ()))
     if not any(p and p in t for p in places):
@@ -1095,6 +1112,7 @@ def find_video(ev, source, kind, cat="MotoGP"):
     if source == "canal":  # sinon (et en secours) : recherche par l'API dans la chaîne, aux dates du GP
         pools.append(lambda: api_search(channel, canal_query(ev, kind, cat), iso(start), iso(end)))
         pools.append(lambda: api_search(channel, f"résumé {gp_full(ev)} {cat}", iso(start), iso(end)))
+        pools.append(lambda: api_search(channel, f"{gp_short(ev)} {cat}", iso(start), iso(end)))  # secours, large
     pools.append(lambda: channel_feed(channel, bucket(900)))
     if recent:
         if source == "canal":
@@ -3036,6 +3054,16 @@ def diag_page(code, evs):
             end = (datetime.combine(ev["end"], datetime.min.time()) + timedelta(days=12)).strftime("%Y-%m-%dT%H:%M:%SZ")
             seen = api_search(CANAL_CHANNEL, canal_query(ev, kind, cat), start, end)
             st.caption("Titres renvoyés par YouTube : " + (" | ".join(x["title"] for x in seen[:8]) or "aucun"))
+    # Tous les titres Canal+ récents qui parlent de ce GP (pour repérer un titre que le site ne reconnaît pas)
+    start = (datetime.combine(ev["start"], datetime.min.time()) - timedelta(days=1)).replace(tzinfo=timezone.utc)
+    places = {fr_place(ev)} | set(_gp_words(ev)) | set(GP_FR_ALIAS.get(ev["code"], ()))
+    pool = channel_uploads(CANAL_CHANNEL, start.strftime("%Y-%m-%dT%H:%M:%SZ"), bucket(1800))
+    pool += api_search(CANAL_CHANNEL, f"{gp_short(ev)} MotoGP", start.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                       (start + timedelta(days=16)).strftime("%Y-%m-%dT%H:%M:%SZ"))
+    about = {x["id"]: x for x in pool if any(p and p in norm(x["title"]) for p in places)}
+    st.markdown("**Toutes les vidéos Canal+ qui parlent de ce GP :**")
+    for x in about.values():
+        st.caption(f"{x.get('published', '')[:16]} · {x['title']}")
 
 
 def main():
